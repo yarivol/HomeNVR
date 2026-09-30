@@ -1,6 +1,6 @@
 # DESIGN.md — Архитектура myMediaCombain NVR
 
-Основано на ТЗ v2.0 ([../TZ.txt](../TZ.txt)).
+Основано на ТЗ v2.1 ([TZ.txt](TZ.txt)).
 
 ## 1. Компоненты
 
@@ -40,19 +40,17 @@
 ```
 backend/
 ├── CMakeLists.txt
-├── src/
-│   ├── main.cpp
-│   ├── api/            # HTTP REST API (endpoints из ТЗ §40)
-│   ├── ws/             # WebSocket события (ТЗ §41)
-│   ├── camera/         # ONVIF client, RTSP connection manager, reconnect state machine
-│   ├── recorder/       # FFmpeg segment recorder (1–5 мин), запись metadata в БД
-│   ├── motion/         # OpenCV pipeline: resize→gray→blur→diff→threshold→contours
-│   ├── storage/        # circular overwrite, контроль свободного места
-│   ├── exporter/       # объединение сегментов → MP4 (stream copy, без перекодирования)
-│   ├── db/             # PostgreSQL client (libpqxx), миграции
-│   ├── auth/           # сессии, password hashing (bcrypt/argon2), проверка ролей
-│   └── common/         # логирование (structured), конфиг, crypto для секретов
-└── tests/
+├── Dockerfile
+├── db/migrations/    # SQL-миграции, применяются при старте
+└── src/
+    ├── main.cpp          # точка входа, роутинг, сборка компонентов
+    ├── api/              # REST API: auth, setup wizard, camera (ТЗ §40)
+    ├── auth/             # argon2id хеширование, сессии (HttpOnly cookie), require_user/require_admin
+    ├── camera/           # ONVIF-клиент (WS-Security), RTSP probe (libavformat),
+    │                     # CameraManager: state machine + exponential backoff reconnect (ТЗ §57)
+    ├── ws/               # WebSocket-хаб, broadcast событий (ТЗ §41)
+    ├── db/               # libpqxx: подключение с retry, миграции, транзакции
+    └── common/           # конфиг из env, AES-256-GCM для секретов камеры (ТЗ §39)
 ```
 
 ### Reconnect state machine (ТЗ §57)
@@ -147,14 +145,21 @@ volumes:     # ./data/postgres, ./data/recordings, ./data/config
 
 ## 8. Безопасность (чеклист)
 
-- [ ] password hashing (argon2)
-- [ ] HttpOnly session cookies
-- [ ] RTSP credentials никогда не уходят во frontend
-- [ ] PostgreSQL не опубликован наружу
-- [ ] секреты не в Git
-- [ ] проверка роли на каждом защищённом endpoint
-- [ ] авторизация download endpoints
-- [ ] секреты не попадают в логи
+Безопасность — приоритет с первых фаз, а не «допилим потом».
+
+- [x] password hashing (argon2id: 64 МБ, 3 итерации)
+- [x] HttpOnly + SameSite=Lax session cookies (флаг Secure — при включении HTTPS)
+- [x] rate limit на логин: 5 неудач → блокировка 60 сек
+- [x] RTSP credentials никогда не уходят во frontend (в БД — AES-256-GCM)
+- [x] PostgreSQL не опубликован наружу (нет `ports:` в compose)
+- [x] секреты не в Git (.env, data/ в .gitignore; ключ — Docker secret)
+- [x] проверка роли на каждом защищённом endpoint (require_user / require_admin)
+- [x] setup wizard закрывается после создания первого админа (нет дефолтных паролей)
+- [x] nginx: server_tokens off, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, CSP
+- [x] параметризованные SQL-запросы (exec_params) — защита от SQL injection
+- [x] секреты не попадают в логи (RTSP URL никогда не логируется)
+- [ ] авторизация download endpoints (Phase 3)
+- [ ] HTTPS при публикации в Интернет (post-MVP)
 
 ## 9. Расширения за пределами MVP
 

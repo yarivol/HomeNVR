@@ -2,7 +2,7 @@
 
 Домашняя WEB-система видеонаблюдения / NVR для **одной IP-камеры**.
 
-Полное техническое задание: [TZ.txt](TZ.txt) (v2.0).
+Полное техническое задание: [docs/TZ.txt](docs/TZ.txt) (v2.1).
 
 ## Что делает система
 
@@ -43,14 +43,16 @@ Browser → Nginx ─┬─→ Next.js (UI)
 
 ```
 myMediaCombain/
-├── TZ.txt              # Техническое задание v2.0
-├── README.md           # Этот файл
-├── docs/               # Документация (обновляется вместе с кодом)
-├── frontend/           # Next.js приложение
-├── backend/            # C++ backend
-├── nginx/              # Конфигурация Nginx
-├── docker-compose.yml  # Оркестрация контейнеров
-└── data/               # Persistent volumes (postgres, recordings, config)
+├── docs/
+│   ├── TZ.txt            # Техническое задание v2.1
+│   ├── DESIGN.md         # Архитектура
+│   └── DEVELOPMENT.md    # Запуск и разработка
+├── README.md             # Этот файл (в корне — показывается на GitHub)
+├── frontend/             # Next.js приложение
+├── backend/              # C++ backend
+├── nginx/                # Конфигурация Nginx
+├── docker-compose.yml    # Оркестрация контейнеров
+└── data/                 # Persistent volumes (postgres, recordings, config)
 ```
 
 ## Ключевые принципы
@@ -64,12 +66,12 @@ myMediaCombain/
 ## Этапы разработки (roadmap)
 
 - [x] **Phase 1** — Infrastructure: Docker Compose, PostgreSQL, Nginx, Next.js, C++ backend skeleton ✅ (код готов, проверка запуска — на Debian)
-- [ ] **Phase 2** — Camera: ONVIF, RTSP, reconnect, статус
+- [~] **Phase 2** — Camera: ONVIF, RTSP, reconnect, статус + auth (argon2, сессии, rate limit) + setup wizard ✅ (код готов, не тестирован)
 - [ ] **Phase 3** — Recording: сегментная запись, circular overwrite
 - [ ] **Phase 4** — Motion: OpenCV detection, зоны, события, thumbnails
 - [ ] **Phase 5** — Web UI: login, live, архив, события, скачивание
 - [ ] **Phase 6** — Admin panel: все разделы настроек
-- [ ] **Phase 7** — Hardening: безопасность, HTTPS, логи, health checks
+- [ ] **Phase 7** — Hardening: HTTPS, health checks, recovery
 
 ## Запуск
 
