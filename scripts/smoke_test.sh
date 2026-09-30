@@ -37,6 +37,8 @@ if [ -n "$PASS" ]; then
 
   echo "=== система и камера ==="
   t "GET /api/system/status"    200 "$BASE/api/system/status"
+  grep -q '"uptime_sec"' /tmp/smoke_body && { echo "PASS  статус содержит uptime_sec"; PASS_COUNT=$((PASS_COUNT+1)); } \
+    || { echo "FAIL  статус: нет uptime_sec"; FAIL_COUNT=$((FAIL_COUNT+1)); }
   t "GET /api/camera"           200 "$BASE/api/camera"
   t "GET /api/storage"          200 "$BASE/api/storage"
 

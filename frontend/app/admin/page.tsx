@@ -395,6 +395,22 @@ function SystemTab() {
 
   const ru = (key: string) => STATUS_RU[key]?.[String(status[key])] ?? String(status[key]);
 
+  // русская плюрализация: 1 день / 2 дня / 5 дней
+  const plural = (n: number, one: string, few: string, many: string) => {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  };
+  const formatUptime = (sec: number) => {
+    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    const parts: string[] = [];
+    if (d) parts.push(`${d} ${plural(d, "день", "дня", "дней")}`);
+    if (h) parts.push(`${h} ${plural(h, "час", "часа", "часов")}`);
+    if (m || parts.length === 0) parts.push(`${m} ${plural(m, "минута", "минуты", "минут")}`);
+    return parts.join(" ");
+  };
+
   return (
     <div className={card}>
       <Row label="Камера" value={ru("camera")} />
@@ -403,6 +419,9 @@ function SystemTab() {
       <Row label="Диск занят" value={`${status.storage_percent}%`} />
       <Row label="База данных" value={ru("database")} />
       <Row label="Backend" value={ru("backend")} />
+      {typeof status.uptime_sec === "number" && (
+        <Row label="Аптайм" value={formatUptime(status.uptime_sec)} />
+      )}
     </div>
   );
 }

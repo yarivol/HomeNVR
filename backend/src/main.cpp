@@ -147,6 +147,9 @@ int main() {
 
     crow::SimpleApp app;
 
+    // Аптайм backend (ТЗ §50)
+    const auto started_at = std::chrono::steady_clock::now();
+
     // Health check (ТЗ §59) — без авторизации, для Docker
     CROW_ROUTE(app, "/health")([] {
         crow::json::wvalue res;
@@ -155,7 +158,7 @@ int main() {
     });
 
     // Статус системы (ТЗ §50)
-    CROW_ROUTE(app, "/api/system/status")([&db, &cam, &recorder, &storage, &motion](const crow::request& req) {
+    CROW_ROUTE(app, "/api/system/status")([&db, &cam, &recorder, &storage, &motion, &started_at](const crow::request& req) {
         if (!auth::require_user(req, db)) return crow::response(401);
         crow::json::wvalue res;
         res["backend"] = "ok";
@@ -164,13 +167,14 @@ int main() {
         res["recording"] = recorder.state_str();
         res["motion"] = motion.enabled() ? "enabled" : "disabled";
         res["storage_percent"] = static_cast<int>(storage.stats().usage_percent * 100);
+        res["uptime_sec"] = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - started_at).count();
         return crow::response(200, res);
     });
 
     // WebSocket (ТЗ §41)
     CROW_WEBSOCKET_ROUTE(app, "/ws")
         .onopen([&ws_hub](crow::websocket::connection& conn) {
-            spdlog::info("ws client connected");
             ws_hub.add(&conn);
             spdlog::debug("ws client connected (total: {})", ws_hub.size());
         })
