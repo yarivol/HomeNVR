@@ -121,18 +121,21 @@ WebSocket (`/ws`): realtime события `camera.*`, `motion.*`, `recording.*`
 
 ## 6. Frontend (Next.js)
 
-Страницы:
+Страницы (реализовано):
 
 ```
 /setup            — мастер первого запуска: создание админа, настройка камеры (ТЗ §73.5)
 /login            — авторизация (username + password)
-/                 — главная: live preview, статус, последние события
-/archive          — выбор даты, таймлайн, HLS-плеер, скачивание
-/events           — список событий движения с thumbnails
-/admin            — 7 разделов (камера, видео, запись, motion, storage, users, система)
+/                 — главная: live HLS-плеер, статус камеры, последние события, WS-realtime
+/archive          — выбор даты, список сегментов, HLS-просмотр, скачивание MP4
+/events           — события движения за выбранный день с thumbnails
+/admin            — 6 вкладок: камера, запись, motion, хранилище, пользователи, система
 ```
 
-- Локализация: все строки в `locales/ru.json` (задел под en)
+Ключевые файлы: `lib/api.ts` (fetch + редирект на 401), `lib/useAuth.ts` (guard + setup-check),
+`components/HlsPlayer.tsx` (hls.js, нативный HLS в Safari).
+
+- Локализация: `locales/ru.json` (задел под en; строки постепенно переносятся)
 - Аутентификация: HttpOnly session cookie, срок 7 дней
 - Responsive, mobile-first, touch-friendly
 - Стиль: минимализм, крупные кнопки, без технических деталей для USER

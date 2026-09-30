@@ -10,6 +10,7 @@ class StorageManager;
 class SegmentRecorder;
 class LiveStream;
 class Exporter;
+class MotionDetector;
 
 namespace api {
 
@@ -24,5 +25,7 @@ void register_events_routes(crow::SimpleApp& app, db::Database& db,
 void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& exporter,
                             const std::string& live_path, const std::string& hls_path,
                             const std::string& recordings_path);
+void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetector& motion,
+                           SegmentRecorder& recorder);
 
 }  // namespace api

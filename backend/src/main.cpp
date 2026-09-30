@@ -153,6 +153,7 @@ int main() {
     api::register_events_routes(app, db, cfg.thumbnails_path);
     api::register_stream_routes(app, db, exporter, cfg.live_path, cfg.hls_path,
                                 cfg.recordings_path);
+    api::register_admin_routes(app, db, motion, recorder);
 
     spdlog::info("listening on port {}", cfg.port);
     app.port(cfg.port).multithreaded().run();
