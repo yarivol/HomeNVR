@@ -240,6 +240,10 @@ bool MotionDetector::detection_session(const std::string& url) {
     const double sens = sensitivity();
     const int diff_threshold = static_cast<int>(35 - sens * 25);        // 10..35
     const double min_area_ratio = 0.02 - sens * 0.015;                  // 0.005..0.02 кадра
+    // cooldown/min_event кэшируем на сессию (и освежаем вместе с зонами) —
+    // запрос в БД на каждый анализируемый кадр грузит и БД, и API-потоки
+    int cooldown = cooldown_sec();
+    int min_event = min_event_sec();
 
     AVPacket* pkt = av_packet_alloc();
     AVFrame* frame = av_frame_alloc();
@@ -265,10 +269,12 @@ bool MotionDetector::detection_session(const std::string& url) {
             // анализируем каждый 3-й кадр — достаточно для детекции, экономит CPU
             if (++frame_counter % 3 != 0) continue;
 
-            // периодически перечитываем зоны (админ мог поменять)
+            // периодически перечитываем зоны и настройки (админ мог поменять)
             if (frame_counter % 300 == 0) {
                 detect_zones = parse_zones(zones_json("motion_zones_detect"));
                 ignore_zones = parse_zones(zones_json("motion_zones_ignore"));
+                cooldown = cooldown_sec();
+                min_event = min_event_sec();
             }
 
             // --- пайплайн ТЗ §21: resize → gray → blur → diff → threshold → contours ---
@@ -320,7 +326,7 @@ bool MotionDetector::detection_session(const std::string& url) {
             const auto now = std::chrono::steady_clock::now();
             const auto since_last = std::chrono::duration<double>(now - last_event_end).count();
 
-            if (score > min_area_ratio && !in_event && since_last >= cooldown_sec()) {
+            if (score > min_area_ratio && !in_event && since_last >= cooldown) {
                 in_event = true;
                 event_start = now;
                 event_max_score = score;
@@ -335,8 +341,8 @@ bool MotionDetector::detection_session(const std::string& url) {
                 // событие заканчивается после 2 секунд тишины
                 if (score <= min_area_ratio * 0.3) {
                     const double elapsed = std::chrono::duration<double>(now - event_start).count();
-                    // 2 секунды без движения И событие длиннее минимума → завершаем
-                    if (elapsed >= min_event_sec()) {
+                    // тишина длиннее минимальной длительности события → завершаем
+                    if (elapsed >= min_event) {
                         in_event = false;
                         last_event_end = now;
 

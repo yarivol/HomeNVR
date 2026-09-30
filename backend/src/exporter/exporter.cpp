@@ -22,6 +22,15 @@ void Exporter::start() {
     if (running_.exchange(true)) return;
     std::error_code ec;
     fs::create_directories(exports_path_, ec);
+    // восстановление после падения/restart'а: задачи, застрявшие
+    // в PROCESSING (backend убили посреди ffmpeg), помечаем FAILED
+    try {
+        db_.tx([](pqxx::work& w) {
+            w.exec("UPDATE exports SET status='FAILED' WHERE status='PROCESSING'");
+        });
+    } catch (const std::exception& e) {
+        spdlog::error("export recovery failed: {}", e.what());
+    }
     thread_ = std::thread([this] { run(); });
     spdlog::info("exporter started");
 }
@@ -125,6 +134,13 @@ void Exporter::process(long long id, const std::string& start_iso, const std::st
         const std::string out_path = (fs::path(exports_path_) / out_name).generic_string();
 
         const pid_t pid = fork();
+        if (pid < 0) {
+            // fork не удался — waitpid(-1) ждал бы ЧУЖОЙ процесс (ffmpeg live-стрима)
+            spdlog::error("export {}: fork failed", id);
+            fs::remove(list_file);
+            set_status("FAILED");
+            return;
+        }
         if (pid == 0) {
             const std::string dur = std::to_string(duration_sec);
             execlp("ffmpeg", "ffmpeg",

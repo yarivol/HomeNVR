@@ -23,7 +23,9 @@ constexpr int kReconnectSec = 10;
 // Путь сегмента (ТЗ §19): recordings/camera/YYYY/MM/DD/HH/HHMM.mp4
 std::string make_segment_path(const std::string& root) {
     const std::time_t now = std::time(nullptr);
-    const std::tm* t = std::localtime(&now);
+    // localtime_r — потокобезопасно (рекордер и детектор в разных потоках)
+    std::tm tm_buf{};
+    const std::tm* t = localtime_r(&now, &tm_buf);
 
     char dir[64];
     std::snprintf(dir, sizeof(dir), "camera/%04d/%02d/%02d/%02d",
@@ -263,7 +265,12 @@ bool SegmentRecorder::record_session(const std::string& url, int segment_sec) {
         for (unsigned i = 0; i < in->nb_streams; ++i) {
             if (map[i] < 0) continue;
             AVStream* os = avformat_new_stream(out, nullptr);
-            if (!os) return false;
+            if (!os) {
+                // не забываем освободить выходной контекст — иначе утечка
+                avformat_free_context(out);
+                out = nullptr;
+                return false;
+            }
             avcodec_parameters_copy(os->codecpar, in->streams[i]->codecpar);
             os->codecpar->codec_tag = 0;
             os->time_base = in->streams[i]->time_base;
@@ -439,7 +446,11 @@ bool SegmentRecorder::record_session_motion(const std::string& url, int segment_
         for (unsigned i = 0; i < in->nb_streams; ++i) {
             if (map[i] < 0) continue;
             AVStream* os = avformat_new_stream(out, nullptr);
-            if (!os) return false;
+            if (!os) {
+                avformat_free_context(out);
+                out = nullptr;
+                return false;
+            }
             avcodec_parameters_copy(os->codecpar, in->streams[i]->codecpar);
             os->codecpar->codec_tag = 0;
             os->time_base = in->streams[i]->time_base;

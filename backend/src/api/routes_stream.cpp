@@ -3,6 +3,7 @@
 #include "routes.hpp"
 
 #include <spdlog/spdlog.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -178,6 +179,12 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
             const std::string playlist = (dir / "index.m3u8").generic_string();
             const std::string dur = std::to_string(duration_sec);
             const pid_t pid = fork();
+            if (pid < 0) {
+                // fork не удался — waitpid(-1) перехватил бы чужой процесс
+                spdlog::error("archive session {}: fork failed", token);
+                std::filesystem::remove_all(dir);
+                return json_error(500, "Не удалось подготовить запись");
+            }
             if (pid == 0) {
                 execlp("ffmpeg", "ffmpeg",
                        "-loglevel", "error", "-y",
@@ -191,8 +198,19 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                        static_cast<char*>(nullptr));
                 _exit(127);
             }
+            // ждём ffmpeg с потолком 60 сек: stream copy быстрый, но зависший
+            // процесс не должен навсегда блокировать HTTP-поток
             int status = 0;
-            waitpid(pid, &status, 0);
+            bool reaped = false;
+            for (int i = 0; i < 600; ++i) {
+                if (waitpid(pid, &status, WNOHANG) > 0) { reaped = true; break; }
+                usleep(100'000);
+            }
+            if (!reaped) {
+                spdlog::error("archive session {}: ffmpeg завис, убиваем", token);
+                kill(pid, SIGKILL);
+                waitpid(pid, &status, 0);
+            }
             std::filesystem::remove(list_file);
 
             if (status != 0 || !std::filesystem::exists(playlist)) {

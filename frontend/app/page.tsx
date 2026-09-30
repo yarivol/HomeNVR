@@ -3,7 +3,7 @@
 // Главная страница (ТЗ §11): live preview, статус камеры, последние события.
 import HlsPlayer from "@/components/HlsPlayer";
 import { apiJson } from "@/lib/api";
-import { useAuth } from "@/lib/useAuth";
+import { useAuth, clearAuthCache } from "@/lib/useAuth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -96,6 +96,7 @@ export default function HomePage() {
   if (loading || !user) return null;
 
   async function logout() {
+    clearAuthCache();
     await apiJson("/api/auth/logout", { method: "POST" }).catch(() => {});
     router.replace("/login");
   }

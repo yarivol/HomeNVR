@@ -26,6 +26,9 @@ public:
     // Работает и с void-лямбдами, и с возвращающими значение.
     // Вложенный вызов tx() из лямбды tx() запрещён (был бы самодедлок) —
     // вместо зависания бросаем исключение.
+    // При обрыве соединения (postgres перезапустился) переподключаемся
+    // и повторяем транзакцию один раз — иначе до рестарта backend'а
+    // все запросы к БД падали бы навсегда.
     template <typename F>
     auto tx(F&& fn) -> decltype(fn(std::declval<pqxx::work&>())) {
         if (in_tx_)
@@ -36,14 +39,24 @@ public:
             explicit Guard(bool& f) : flag(f) { flag = true; }
             ~Guard() { flag = false; }
         } guard(in_tx_);
-        pqxx::work w{*conn_};
-        if constexpr (std::is_void_v<decltype(fn(w))>) {
-            fn(w);
-            w.commit();
-        } else {
-            auto result = fn(w);
-            w.commit();
-            return result;
+        for (int attempt = 0;; ++attempt) {
+            try {
+                pqxx::work w{*conn_};
+                if constexpr (std::is_void_v<decltype(fn(w))>) {
+                    fn(w);
+                    w.commit();
+                    return;
+                } else {
+                    auto result = fn(w);
+                    w.commit();
+                    return result;
+                }
+            } catch (const pqxx::broken_connection&) {
+                if (attempt >= 1) throw;
+                // соединение умерло — разрыв до commit откатывает транзакцию
+                // на сервере, повтор безопасен
+                conn_ = std::make_unique<pqxx::connection>(url_);
+            }
         }
     }
 

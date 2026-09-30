@@ -34,7 +34,8 @@ private:
 
     std::atomic<bool> running_{false};
     std::atomic<bool> reload_requested_{false};
-    pid_t child_ = -1;
+    // pid дочернего ffmpeg: пишется из run()-потока, читается из stop() — atomic
+    std::atomic<pid_t> child_{-1};
     std::thread thread_;
     std::mutex mutex_;
 };
