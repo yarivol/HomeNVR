@@ -49,7 +49,10 @@ backend/
     ├── camera/           # ONVIF-клиент (WS-Security), RTSP probe (libavformat),
     │                     # CameraManager: state machine + exponential backoff reconnect (ТЗ §57)
     ├── recorder/         # SegmentRecorder: RTSP → MP4 сегменты 5 мин, stream copy,
-    │                     # ротация на кейфрейме, fMP4 (файл читаем даже при обрыве), metadata в БД
+    │                     # ротация на кейфрейме, fMP4 (файл читаем даже при обрыве), metadata в БД.
+    │                     # Режимы записи (ТЗ §18): continuous (всегда) | motion (pre-buffer
+    │                     # кольцевой буфер 10с + запись пока есть движение + cooldown 10с,
+    │                     # события от MotionDetector)
     ├── stream/           # LiveStream: ffmpeg RTSP→HLS под супервизором (ТЗ §73.1)
     ├── exporter/         # Exporter: очередь экспортов, concat сегментов → MP4 (stream copy),
     │                     # TTL 1 час, статусы QUEUED/PROCESSING/READY/FAILED/EXPIRED (ТЗ §38)

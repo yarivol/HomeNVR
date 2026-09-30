@@ -60,6 +60,7 @@ myMediaCombain/
 - Одна камера, только WEB-интерфейс
 - RTSP не покидает backend; браузеру отдаётся WebRTC/HLS
 - Видео хранится на диске сегментами 1–5 минут
+- Режимы записи: постоянная (continuous) или по движению (motion) с pre-buffer 10 с
 - Циклическая перезапись: при заполнении диска удаляются самые старые сегменты
 - Простой интерфейс для пользователя без IT-навыков (русский язык)
 
@@ -67,7 +68,7 @@ myMediaCombain/
 
 - [x] **Phase 1** — Infrastructure ✅ проверено на Debian 13
 - [x] **Phase 2** — Camera (ONVIF/RTSP/reconnect) + auth (argon2id, сессии, rate limit) + setup wizard ✅ API проверено
-- [x] **Phase 3** — Recording: сегментная запись (stream copy, fMP4), circular overwrite, /api/storage ✅ код собран
+- [x] **Phase 3** — Recording: сегментная запись (stream copy, fMP4), circular overwrite, /api/storage, запись по движению (pre-buffer + cooldown) ✅ проверено
 - [x] **Phase 4** — Motion: OpenCV pipeline, зоны detect/ignore, события, thumbnails, /api/events ✅ код собран
 - [x] **Phase 5** — Web UI: setup wizard, login, live (hls.js), архив, события, скачивание ✅ UI рендерится
 - [x] **Phase 6** — Admin panel: камера, запись, motion, хранилище, пользователи, система ✅ код собран

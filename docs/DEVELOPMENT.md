@@ -63,6 +63,7 @@ docker compose restart nginx        # применить изменения ngin
 | Circular overwrite не удаляет сегменты | Цель очистки была фиксированная 85% — при лимите <85% цикл не запускался | гистерезис: чистим до `max_storage_usage - 5%` |
 | Frontend в restart-loop от autoheal | Next standalone слушает на `$HOSTNAME` (id контейнера), healthcheck на 127.0.0.1 не проходил | `ENV HOSTNAME=0.0.0.0` в frontend Dockerfile |
 | nginx/frontend healthcheck fail | `localhost` резолвится в ::1, wget туда не ходит | healthcheck на `127.0.0.1` |
+| В режиме «по движению» запись не останавливается | reload детектора посреди активного события терял `motion.ended` | детектор завершает событие при закрытии сессии |
 
 ## Backup и восстановление (ТЗ §68, Phase 7)
 
