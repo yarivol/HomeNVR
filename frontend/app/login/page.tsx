@@ -41,12 +41,16 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center p-6">
       <form
         onSubmit={onSubmit}
-        className="flex w-full max-w-sm flex-col gap-4 rounded-3xl bg-white p-8 shadow-sm"
+        className="animate-page flex w-full max-w-sm flex-col gap-4 rounded-3xl bg-white p-8 shadow-sm"
       >
-        <h1 className="text-center text-2xl font-semibold">HomeNVR</h1>
+        <div className="flex flex-col items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon.svg" alt="HomeNVR" className="h-14 w-14" />
+          <h1 className="text-center text-2xl font-semibold">HomeNVR</h1>
+        </div>
 
         <input
-          className="rounded-xl border border-neutral-200 px-4 py-3 outline-none focus:border-neutral-400"
+          className="transition-soft rounded-xl border border-neutral-200 px-4 py-3 outline-none focus:border-neutral-400 focus:shadow-sm"
           placeholder="Имя пользователя"
           autoComplete="username"
           value={username}
@@ -54,7 +58,7 @@ export default function LoginPage() {
           required
         />
         <input
-          className="rounded-xl border border-neutral-200 px-4 py-3 outline-none focus:border-neutral-400"
+          className="transition-soft rounded-xl border border-neutral-200 px-4 py-3 outline-none focus:border-neutral-400 focus:shadow-sm"
           type="password"
           placeholder="Пароль"
           autoComplete="current-password"
@@ -63,14 +67,14 @@ export default function LoginPage() {
           required
         />
 
-        {error && <p className="text-center text-sm text-red-500">{error}</p>}
+        {error && <p className="animate-fade text-center text-sm text-red-500">{error}</p>}
 
         <button
           type="submit"
           disabled={busy}
-          className="rounded-xl bg-neutral-900 py-3 text-lg text-white active:opacity-80 disabled:opacity-40"
+          className="transition-soft rounded-xl bg-neutral-900 py-3 text-lg text-white hover:bg-neutral-700 active:scale-[0.98] active:opacity-80 disabled:opacity-40"
         >
-          Войти
+          {busy ? "Входим…" : "Войти"}
         </button>
       </form>
     </main>

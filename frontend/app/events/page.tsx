@@ -29,26 +29,27 @@ export default function EventsPage() {
   if (loading || !user) return null;
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 p-4 pb-10">
+    <main className="animate-page mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 p-4 pb-10">
       <header className="flex items-center justify-between pt-2">
         <h1 className="text-2xl font-semibold">События</h1>
-        <Link href="/" className="text-neutral-500 active:opacity-60">Назад</Link>
+        <Link href="/" className="transition-soft text-neutral-500 active:opacity-60">Назад</Link>
       </header>
 
       <input
         type="date"
         value={date}
         onChange={(e) => setDate(e.target.value)}
-        className="rounded-xl border border-neutral-200 bg-white px-4 py-3"
+        className="transition-soft rounded-xl border border-neutral-200 bg-white px-4 py-3"
       />
 
       {events.length === 0 ? (
-        <p className="text-neutral-400">За этот день событий нет</p>
+        <p className="animate-fade text-neutral-400">За этот день событий нет</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {events.map((e) => (
+          {events.map((e, i) => (
             <li key={e.id}
-              className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
+              style={{ animationDelay: `${Math.min(i, 10) * 50}ms` }}
+              className="animate-page card-hover flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
               {e.thumbnail ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={e.thumbnail} alt="" className="h-16 w-28 rounded-lg object-cover" />

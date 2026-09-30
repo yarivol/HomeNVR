@@ -1,3 +1,98 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ============ Анимации (fade-in, pulse, hover-лифт, skeleton) ============ */
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  /* Появление страницы/блоков */
+  .animate-page {
+    animation: fade-in-up 0.35s ease-out both;
+  }
+  .animate-page-delay {
+    animation: fade-in-up 0.35s ease-out 0.08s both;
+  }
+  .animate-fade {
+    animation: fade-in 0.3s ease-out both;
+  }
+
+  /* Индикатор live / статуса */
+  .animate-pulse-soft {
+    animation: pulse-soft 1.6s ease-in-out infinite;
+  }
+
+  /* Заглушка-скелетон во время загрузки */
+  .skeleton {
+    background: linear-gradient(90deg, #e5e5e5 25%, #f5f5f5 50%, #e5e5e5 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  /* Карточки/кнопки: лёгкий подъём при наведении */
+  .card-hover {
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease,
+      opacity 0.15s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgb(0 0 0 / 0.08);
+  }
+  .card-hover:active {
+    transform: translateY(0);
+  }
+
+  /* Плавность для всех интерактивных элементов */
+  .transition-soft {
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease,
+      opacity 0.15s ease,
+      transform 0.15s ease;
+  }
+}
+
+/* Плавное появление изображений (thumbnails) */
+img {
+  animation: fade-in 0.25s ease-out;
+}

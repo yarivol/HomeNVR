@@ -57,6 +57,27 @@ docker compose restart nginx        # применить изменения ngin
 | Internal compiler error при сборке | Мало RAM в VM при `-j$(nproc)` | сборка с `-j2` |
 | Изменения nginx.conf не действуют | Конфиг смонтирован в контейнер, но nginx его не перечитал | `docker compose restart nginx` |
 | В Debian 13 нет пакета `docker-compose-v2` | В репозитории Debian он называется `docker-compose` (это v2) | `apt install docker-compose` |
+| **Весь backend завис (все потоки)** | Вложенный `db.tx()`: `MotionDetector::save_event` вызывал `min_event_sec()` внутри лямбды транзакции → самодедлок на `Database::mutex_` | исправлено; добавлена защита: вложенный `tx()` бросает исключение вместо зависания; диагностика: `gdb -p 1 -batch -ex 'thread apply all bt'` в контейнере |
+| VM не отвечает во время `docker compose build` | Компиляция C++ + работающие контейнеры съедают всю RAM → swap thrash | добавить swap-файл на VM; не собирать под нагрузкой; `-j2` |
+
+## Backup и восстановление (ТЗ §68, Phase 7)
+
+```bash
+./scripts/backup.sh     # создаёт data/backups/homenvr-backup-<дата>.tar.gz
+                        # (PostgreSQL dump + конфиги + ключи; записи не входят)
+./scripts/restore.sh data/backups/homenvr-backup-XXX.tar.gz   # восстановление
+```
+
+Хранятся последние 7 бэкапов. Для регулярного бэкапа добавить в cron:
+`0 3 * * * /home/user/HomeNVR/scripts/backup.sh`
+
+## Recovery (Phase 7)
+
+- Все контейнеры: `restart: unless-stopped` (автозапуск после reboot).
+- Healthchecks у всех сервисов; контейнер `autoheal` перезапускает любой
+  unhealthy-контейнер автоматически (защита от зависаний).
+- Логи docker: ротация json-file 10MB × 3; backend пишет также в
+  `data/logs/backend.log` (spdlog rotating, 10MB × 3).
 
 ## После перезагрузки сервера
 

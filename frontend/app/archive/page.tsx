@@ -78,30 +78,31 @@ export default function ArchivePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 p-4 pb-10">
+    <main className="animate-page mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 p-4 pb-10">
       <header className="flex items-center justify-between pt-2">
         <h1 className="text-2xl font-semibold">Архив</h1>
-        <Link href="/" className="text-neutral-500 active:opacity-60">Назад</Link>
+        <Link href="/" className="transition-soft text-neutral-500 active:opacity-60">Назад</Link>
       </header>
 
       <input
         type="date"
         value={date}
         onChange={(e) => setDate(e.target.value)}
-        className="rounded-xl border border-neutral-200 bg-white px-4 py-3"
+        className="transition-soft rounded-xl border border-neutral-200 bg-white px-4 py-3"
       />
 
       {playUrl && <HlsPlayer src={playUrl} />}
 
-      {message && <p className="text-sm text-red-500">{message}</p>}
+      {message && <p className="animate-fade text-sm text-red-500">{message}</p>}
 
       {recordings.length === 0 ? (
-        <p className="text-neutral-400">За этот день записей нет</p>
+        <p className="animate-fade text-neutral-400">За этот день записей нет</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {recordings.map((r) => (
+          {recordings.map((r, i) => (
             <li key={r.id}
-              className="flex items-center justify-between gap-3 rounded-xl bg-white p-3 shadow-sm">
+              style={{ animationDelay: `${Math.min(i, 10) * 50}ms` }}
+              className="animate-page card-hover flex items-center justify-between gap-3 rounded-xl bg-white p-3 shadow-sm">
               <span className="font-medium">
                 {new Date(r.started_at).toLocaleTimeString("ru-RU", {
                   hour: "2-digit", minute: "2-digit",
@@ -110,16 +111,16 @@ export default function ArchivePage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => play(r)}
-                  className="rounded-lg bg-neutral-900 px-4 py-2 text-white active:opacity-80"
+                  className="transition-soft rounded-lg bg-neutral-900 px-4 py-2 text-white hover:bg-neutral-700 active:scale-95 active:opacity-80"
                 >
                   Смотреть
                 </button>
                 <button
                   onClick={() => download(r)}
                   disabled={exporting}
-                  className="rounded-lg bg-neutral-100 px-4 py-2 active:opacity-70 disabled:opacity-40"
+                  className="transition-soft rounded-lg bg-neutral-100 px-4 py-2 hover:bg-neutral-200 active:scale-95 active:opacity-70 disabled:opacity-40"
                 >
-                  Скачать
+                  {exporting ? "Подготовка…" : "Скачать"}
                 </button>
               </div>
             </li>

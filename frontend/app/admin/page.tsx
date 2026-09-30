@@ -22,7 +22,7 @@ const input =
   "w-full rounded-xl border border-neutral-200 px-4 py-3 outline-none focus:border-neutral-400";
 const btn =
   "rounded-xl bg-neutral-900 px-6 py-3 text-white active:opacity-80 disabled:opacity-40";
-const card = "flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm";
+const card = "animate-page flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm";
 
 export default function AdminPage() {
   const { user, loading } = useAuth();

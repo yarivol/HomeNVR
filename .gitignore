@@ -30,3 +30,5 @@ out/
 backend/build/
 CMakeCache.txt
 CMakeFiles/
+Screenshots/
+vm_watch.ps1

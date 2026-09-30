@@ -72,7 +72,7 @@ export default function SetupPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-6">
-      <div className="flex w-full max-w-md flex-col gap-4 rounded-3xl bg-white p-8 shadow-sm">
+      <div className="animate-page flex w-full max-w-md flex-col gap-4 rounded-3xl bg-white p-8 shadow-sm">
         {step === 1 && (
           <>
             <h1 className="text-2xl font-semibold">Добро пожаловать!</h1>

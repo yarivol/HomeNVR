@@ -4,6 +4,10 @@
 // Phase 3: запись (сегменты, stream copy) + хранилище (circular overwrite)
 #include <crow.h>
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+
+#include <filesystem>
 
 #include "api/routes.hpp"
 #include "auth/session.hpp"
@@ -19,12 +23,25 @@
 #include "ws/ws_hub.hpp"
 
 int main() {
+    // Конфигурация (нужна до настройки логирования — путь к логам)
+    const Config cfg = Config::from_env();
+
+    // Логи (Phase 7): stdout для docker logs + файл с ротацией 10MB x 3
+    try {
+        std::filesystem::create_directories(cfg.logs_path);
+        auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        auto file_sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+            cfg.logs_path + "/backend.log", 10 * 1024 * 1024, 3);
+        auto logger = std::make_shared<spdlog::logger>(
+            "homenvr", spdlog::sinks_init_list{console_sink, file_sink});
+        spdlog::set_default_logger(logger);
+    } catch (const std::exception& e) {
+        // файловый sink недоступен — продолжаем с выводом в stdout
+    }
     spdlog::set_level(spdlog::level::info);
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
     spdlog::info("HomeNVR backend starting");
 
-    // Конфигурация
-    const Config cfg = Config::from_env();
     if (cfg.database_url.empty()) {
         spdlog::error("DATABASE_URL is not set");
         return 1;

@@ -71,7 +71,7 @@ myMediaCombain/
 - [x] **Phase 4** — Motion: OpenCV pipeline, зоны detect/ignore, события, thumbnails, /api/events ✅ код собран
 - [x] **Phase 5** — Web UI: setup wizard, login, live (hls.js), архив, события, скачивание ✅ UI рендерится
 - [x] **Phase 6** — Admin panel: камера, запись, motion, хранилище, пользователи, система ✅ код собран
-- [ ] **Phase 7** — Hardening: HTTPS, health checks, recovery
+- [x] **Phase 7** — Hardening: health checks + autoheal (recovery), ротация логов (docker + spdlog), backup/restore скрипты ✅ (HTTPS — при привязке домена, ТЗ §73.6)
 
 ## Статус развёртывания
 

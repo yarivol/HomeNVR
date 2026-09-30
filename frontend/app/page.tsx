@@ -65,7 +65,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 p-4 pb-10">
+    <main className="animate-page mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 p-4 pb-10">
       <header className="flex items-center justify-between pt-2">
         <h1 className="text-2xl font-semibold">{camera?.name ?? "Камера"}</h1>
         <button onClick={logout} className="text-neutral-500 active:opacity-60">
@@ -75,10 +75,18 @@ export default function HomePage() {
 
       <p
         className={
-          "text-sm " +
+          "flex items-center gap-2 text-sm " +
           (camera?.status === "connected" ? "text-green-600" : "text-red-500")
         }
       >
+        <span
+          className={
+            "inline-block h-2 w-2 rounded-full " +
+            (camera?.status === "connected"
+              ? "animate-pulse-soft bg-green-500"
+              : "bg-red-500")
+          }
+        />
         {STATUS_TEXT[camera?.status ?? ""] ?? camera?.status}
       </p>
 
@@ -86,22 +94,26 @@ export default function HomePage() {
         <HlsPlayer src="/stream/live/index.m3u8" live />
       ) : (
         <div className="flex aspect-video items-center justify-center rounded-2xl bg-neutral-200 text-neutral-500">
-          {camera?.configured ? "Камера недоступна" : "Камера не настроена"}
+          {camera?.configured ? (
+            "Камера недоступна"
+          ) : (
+            "Камера не настроена"
+          )}
         </div>
       )}
 
       <nav className="grid grid-cols-2 gap-3">
         <Link href="/archive"
-          className="rounded-2xl bg-white py-4 text-center text-lg shadow-sm active:opacity-70">
+          className="card-hover rounded-2xl bg-white py-4 text-center text-lg shadow-sm active:opacity-70">
           Архив
         </Link>
         <Link href="/events"
-          className="rounded-2xl bg-white py-4 text-center text-lg shadow-sm active:opacity-70">
+          className="card-hover rounded-2xl bg-white py-4 text-center text-lg shadow-sm active:opacity-70">
           События
         </Link>
         {user.role === "ADMIN" && (
           <Link href="/admin"
-            className="col-span-2 rounded-2xl bg-neutral-900 py-4 text-center text-lg text-white active:opacity-80">
+            className="card-hover col-span-2 rounded-2xl bg-neutral-900 py-4 text-center text-lg text-white active:opacity-80">
             Настройки
           </Link>
         )}
@@ -113,9 +125,10 @@ export default function HomePage() {
           <p className="text-neutral-400">Пока нет событий</p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {events.map((e) => (
+            {events.map((e, i) => (
               <li key={e.id}
-                className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
+                style={{ animationDelay: `${i * 60}ms` }}
+                className="animate-page card-hover flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
                 {e.thumbnail && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={e.thumbnail} alt="" className="h-12 w-20 rounded-lg object-cover" />
