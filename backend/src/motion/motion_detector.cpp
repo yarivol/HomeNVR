@@ -138,6 +138,9 @@ std::string MotionDetector::current_url() {
 }
 
 void MotionDetector::save_event(double score, const std::string& thumbnail_file) {
+    // ВАЖНО: min_event_sec() сам ходит в БД (db.tx) — вызываем ДО транзакции,
+    // иначе вложенный db.tx = самодедлок на Database::mutex_
+    const int dur = min_event_sec();
     try {
         db_.tx([&](pqxx::work& w) {
             // привязываем к текущему записываемому сегменту
@@ -148,7 +151,7 @@ void MotionDetector::save_event(double score, const std::string& thumbnail_file)
                 "  (SELECT id FROM recordings WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1), "
                 "  now() - make_interval(secs => $2), now(), "
                 "  make_interval(secs => $2), $1, $3)",
-                score, min_event_sec(), thumbnail_file);
+                score, dur, thumbnail_file);
         });
     } catch (const std::exception& e) {
         spdlog::error("motion event save failed: {}", e.what());
