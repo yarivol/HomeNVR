@@ -2,8 +2,9 @@
 FROM node:22-alpine AS build
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install
+COPY package.json package-lock.json ./
+# npm ci — воспроизводимая установка строго по lock-файлу
+RUN npm ci
 
 COPY . .
 RUN npm run build
