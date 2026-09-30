@@ -63,13 +63,23 @@ myMediaCombain/
 
 ## Этапы разработки (roadmap)
 
-- [ ] **Phase 1** — Infrastructure: Docker Compose, PostgreSQL, Nginx, Next.js, C++ backend skeleton
+- [x] **Phase 1** — Infrastructure: Docker Compose, PostgreSQL, Nginx, Next.js, C++ backend skeleton ✅ (код готов, проверка запуска — на Debian)
 - [ ] **Phase 2** — Camera: ONVIF, RTSP, reconnect, статус
 - [ ] **Phase 3** — Recording: сегментная запись, circular overwrite
 - [ ] **Phase 4** — Motion: OpenCV detection, зоны, события, thumbnails
 - [ ] **Phase 5** — Web UI: login, live, архив, события, скачивание
 - [ ] **Phase 6** — Admin panel: все разделы настроек
 - [ ] **Phase 7** — Hardening: безопасность, HTTPS, логи, health checks
+
+## Запуск
+
+См. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+```bash
+cp .env.example .env
+mkdir -p data/config && openssl rand -hex 32 > data/config/secret_key
+docker compose up -d --build
+```
 
 ## Документация
 
