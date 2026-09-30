@@ -27,18 +27,34 @@ const STATUS_TEXT: Record<string, string> = {
   reconnecting: "Переподключение…",
 };
 
+// Кэш последних данных между SPA-переходами: при возврате на главную
+// показываем их мгновенно (без «прыжка» пустое→полное), затем тихо обновляем.
+let cachedCamera: CameraInfo | null = null;
+let cachedEvents: MotionEvent[] = [];
+let firstMountDone = false;
+
 export default function HomePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const [camera, setCamera] = useState<CameraInfo | null>(null);
-  const [events, setEvents] = useState<MotionEvent[]>([]);
+  const [camera, setCamera] = useState<CameraInfo | null>(cachedCamera);
+  const [events, setEvents] = useState<MotionEvent[]>(cachedEvents);
+  const [eventsLoaded, setEventsLoaded] = useState(cachedEvents.length > 0);
+  // анимация появления — только при самом первом заходе, не при возвратах
+  const [animate] = useState(!firstMountDone);
 
   useEffect(() => {
     if (!user) return;
-    apiJson<CameraInfo>("/api/camera").then(setCamera).catch(() => {});
-    apiJson<{ events: MotionEvent[] }>("/api/events")
-      .then((r) => setEvents(r.events.slice(0, 5)))
+    firstMountDone = true;
+    apiJson<CameraInfo>("/api/camera")
+      .then((c) => { cachedCamera = c; setCamera(c); })
       .catch(() => {});
+    apiJson<{ events: MotionEvent[] }>("/api/events")
+      .then((r) => {
+        cachedEvents = r.events.slice(0, 5);
+        setEvents(cachedEvents);
+        setEventsLoaded(true);
+      })
+      .catch(() => setEventsLoaded(true));
 
     // realtime-обновления через WebSocket (ТЗ §41), с автореконнектом —
     // backend может перезапуститься, соединение надо поднимать заново
@@ -53,10 +69,15 @@ export default function HomePage() {
         try {
           const { event } = JSON.parse(msg.data);
           if (event.startsWith("camera."))
-            apiJson<CameraInfo>("/api/camera").then(setCamera).catch(() => {});
+            apiJson<CameraInfo>("/api/camera")
+              .then((c) => { cachedCamera = c; setCamera(c); })
+              .catch(() => {});
           if (event === "motion.ended")
             apiJson<{ events: MotionEvent[] }>("/api/events")
-              .then((r) => setEvents(r.events.slice(0, 5)))
+              .then((r) => {
+                cachedEvents = r.events.slice(0, 5);
+                setEvents(cachedEvents);
+              })
               .catch(() => {});
         } catch {}
       };
@@ -80,7 +101,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="animate-page mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 p-4 pb-10">
+    <main className={(animate ? "animate-page " : "") + "mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 p-4 pb-10"}>
       <header className="flex items-center justify-between pt-2">
         <h1 className="text-2xl font-semibold">{camera?.name ?? "Камера"}</h1>
         <button onClick={logout} className="text-neutral-500 active:opacity-60">
@@ -136,14 +157,24 @@ export default function HomePage() {
 
       <section>
         <h2 className="mb-2 text-lg font-medium">События</h2>
-        {events.length === 0 ? (
+        {!eventsLoaded ? (
+          // скелетоны фиксированной высоты — контент не прыгает при загрузке
+          <ul className="flex flex-col gap-2">
+            {[0, 1, 2].map((i) => (
+              <li key={i} className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
+                <div className="h-12 w-20 animate-pulse-soft rounded-lg bg-neutral-200" />
+                <div className="h-4 w-40 animate-pulse-soft rounded bg-neutral-200" />
+              </li>
+            ))}
+          </ul>
+        ) : events.length === 0 ? (
           <p className="text-neutral-400">Пока нет событий</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {events.map((e, i) => (
               <li key={e.id}
-                style={{ animationDelay: `${i * 60}ms` }}
-                className="animate-page card-hover flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
+                style={animate ? { animationDelay: `${i * 60}ms` } : undefined}
+                className={(animate ? "animate-page " : "") + "card-hover flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm"}>
                 {e.thumbnail && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={e.thumbnail} alt="" className="h-12 w-20 rounded-lg object-cover" />
