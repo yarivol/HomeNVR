@@ -71,7 +71,7 @@ myMediaCombain/
 - [x] **Phase 3** — Recording: сегментная запись (stream copy, fMP4), circular overwrite, /api/storage, запись по движению (pre-buffer + cooldown) ✅ проверено
 - [x] **Phase 4** — Motion: OpenCV pipeline, зоны detect/ignore, события, thumbnails, /api/events ✅ код собран
 - [x] **Phase 5** — Web UI: setup wizard, login, live (hls.js), архив, события, скачивание ✅ UI рендерится
-- [x] **Phase 6** — Admin panel: камера, запись, motion, хранилище, пользователи, система, логи ✅ код собран
+- [x] **Phase 6** — Admin panel: камера, видео (ONVIF), запись, motion, хранилище, пользователи, система, логи ✅ код собран
 - [x] **Phase 7** — Hardening: health checks + autoheal (recovery), ротация логов (docker + spdlog), backup/restore скрипты ✅ (HTTPS — при привязке домена, ТЗ §73.6)
 
 ## Статус развёртывания
@@ -89,8 +89,9 @@ Soak: 0 ошибок backend за 30 мин под нагрузкой.
 (`testsrc2`) в той же docker-сети, RTSP `rtsp://rtsp-test:8554/cam` (+`/cam_sub`).
 
 ⏳ Осталось проверить с реальной камерой: ONVIF-автообнаружение профилей
-и изменение параметров видео на камере (ТЗ §29/§45 — resolution/FPS/bitrate через
-ONVIF SetVideoEncoderConfiguration; на тестовом стенде нет ONVIF-устройства).
+и запись видео-параметров (вкладка «Видео» реализована: чтение конфигурации/опций,
+SetVideoEncoderConfiguration с проверкой применения; на тестовом стенде нет
+ONVIF-устройства — проверен только путь graceful-degradation «камера не отвечает по ONVIF»).
 
 ## Запуск
 

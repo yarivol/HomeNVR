@@ -7,10 +7,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type Tab = "camera" | "recording" | "motion" | "storage" | "users" | "system" | "logs";
+type Tab = "camera" | "video" | "recording" | "motion" | "storage" | "users" | "system" | "logs";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "camera", label: "Камера" },
+  { id: "video", label: "Видео" },
   { id: "recording", label: "Запись" },
   { id: "motion", label: "Движение" },
   { id: "storage", label: "Хранилище" },
@@ -59,6 +60,7 @@ export default function AdminPage() {
       </nav>
 
       {tab === "camera" && <CameraTab />}
+      {tab === "video" && <VideoTab />}
       {tab === "recording" && <RecordingTab />}
       {tab === "motion" && <MotionTab />}
       {tab === "storage" && <StorageTab />}
@@ -155,6 +157,120 @@ function CameraTab() {
         <button className="rounded-xl bg-neutral-100 px-6 py-3 active:opacity-70 disabled:opacity-40"
           disabled={busy} onClick={test}>Проверить</button>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Видео (ТЗ §45): параметры через ONVIF ---------------- */
+type VideoConfig = { encoding: string; width: number; height: number; fps: number; bitrate_kbps: number };
+type VideoInfo = {
+  onvif: boolean;
+  error?: string;
+  profile?: string;
+  config?: VideoConfig;
+  options?: {
+    resolutions?: { width: number; height: number }[];
+    fps_min?: number; fps_max?: number;
+    bitrate_min?: number; bitrate_max?: number;
+  };
+};
+
+function VideoTab() {
+  const [info, setInfo] = useState<VideoInfo | null>(null);
+  const [loadErr, setLoadErr] = useState("");
+  const [res, setRes] = useState("");        // "WxH"
+  const [fps, setFps] = useState(0);
+  const [bitrate, setBitrate] = useState(0);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    apiJson<VideoInfo>("/api/camera/video")
+      .then((r) => {
+        setInfo(r);
+        if (r.config) {
+          setRes(`${r.config.width}x${r.config.height}`);
+          setFps(r.config.fps);
+          setBitrate(r.config.bitrate_kbps);
+        }
+      })
+      .catch((e) => setLoadErr(e instanceof Error ? e.message : "Ошибка загрузки"));
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const [w, h] = res.split("x").map(Number);
+      const r = await apiJson<{ config: VideoConfig }>("/api/camera/video", {
+        method: "PATCH",
+        body: JSON.stringify({ width: w, height: h, fps, bitrate_kbps: bitrate }),
+      });
+      setMsg(`Сохранено ✓ Камера: ${r.config.width}x${r.config.height}, ${r.config.fps} fps, ${r.config.bitrate_kbps} кбит/с`);
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Ошибка");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loadErr) return <div className={card}><p className="text-sm text-red-600">{loadErr}</p></div>;
+  if (!info) return <div className={card}><p className="text-neutral-400">Загрузка…</p></div>;
+
+  if (!info.onvif)
+    return (
+      <div className={card}>
+        <p className="text-neutral-600">
+          {info.error ?? "Камера не отвечает по ONVIF — удалённая настройка видео недоступна."}
+        </p>
+        <p className="text-sm text-neutral-400">
+          Параметры видео можно изменить в веб-интерфейсе самой камеры.
+        </p>
+      </div>
+    );
+
+  const c = info.config!;
+  const opts = info.options;
+
+  return (
+    <div className={card}>
+      <p className="text-sm text-neutral-500">
+        Профиль «{info.profile}», кодек {c.encoding}
+      </p>
+
+      <label className="text-sm text-neutral-600">Разрешение</label>
+      {opts?.resolutions?.length ? (
+        <select className={input} value={res} onChange={(e) => setRes(e.target.value)}>
+          {!opts.resolutions.some((r) => `${r.width}x${r.height}` === res) && res && (
+            <option value={res}>{res} (текущее)</option>
+          )}
+          {opts.resolutions.map((r) => (
+            <option key={`${r.width}x${r.height}`} value={`${r.width}x${r.height}`}>
+              {r.width}x{r.height}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input className={input} value={res} onChange={(e) => setRes(e.target.value)} placeholder="1920x1080" />
+      )}
+
+      <label className="text-sm text-neutral-600">
+        FPS {opts?.fps_max ? `(допустимо ${opts.fps_min}–${opts.fps_max})` : ""}
+      </label>
+      <input className={input} type="number" value={fps} onChange={(e) => setFps(Number(e.target.value))} />
+
+      <label className="text-sm text-neutral-600">
+        Битрейт, кбит/с {opts?.bitrate_max ? `(допустимо ${opts.bitrate_min}–${opts.bitrate_max})` : ""}
+      </label>
+      <input className={input} type="number" value={bitrate} onChange={(e) => setBitrate(Number(e.target.value))} />
+
+      {msg && <p className="text-sm text-neutral-600">{msg}</p>}
+      <button className={btn} disabled={busy} onClick={save}>
+        {busy ? "Применение…" : "Применить на камере"}
+      </button>
+      <p className="text-xs text-neutral-400">
+        Изменение применяется к самой камере; запись и live переподключатся автоматически.
+      </p>
     </div>
   );
 }

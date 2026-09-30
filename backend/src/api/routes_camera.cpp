@@ -5,6 +5,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <optional>
+
 #include "../auth/session.hpp"
 #include "../camera/onvif_client.hpp"
 #include "../camera/rtsp_probe.hpp"
@@ -207,6 +209,149 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
                     res["rtsp"]["error"] = "Не удалось подключиться к потоку";
             }
 
+            return crow::response(200, res);
+        });
+
+    // ---- Видео-настройки камеры через ONVIF (ТЗ §29, §45) ----
+
+    // реквизиты камеры из БД (пароль расшифровывается только здесь, во frontend не уходит)
+    auto load_creds = [&db]() -> std::optional<std::tuple<std::string, int, std::string, std::string>> {
+        try {
+            return db.tx([](pqxx::work& w) -> std::optional<std::tuple<std::string, int, std::string, std::string>> {
+                const auto r = w.exec(
+                    "SELECT ip_address, onvif_port, username, password_encrypted FROM camera LIMIT 1");
+                if (r.empty()) return std::nullopt;
+                const std::string ip = r[0]["ip_address"].as<std::string>();
+                if (ip.empty()) return std::nullopt;
+                return std::make_tuple(ip, r[0]["onvif_port"].as<int>(),
+                                       r[0]["username"].as<std::string>(),
+                                       r[0]["password_encrypted"].as<std::string>());
+            });
+        } catch (...) {
+            return std::nullopt;
+        }
+    };
+
+    // GET /api/camera/video — текущие параметры + доступные опции (ADMIN)
+    CROW_ROUTE(app, "/api/camera/video")([&db, &key_hex, load_creds](const crow::request& req) {
+        if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
+
+        crow::json::wvalue res;
+        const auto creds = load_creds();
+        if (!creds) return json_error(400, "Камера не настроена");
+
+        const auto& [ip, port, user, pass_enc] = *creds;
+        const std::string pass = pass_enc.empty() ? "" : crypto::decrypt(pass_enc, key_hex);
+        OnvifClient onvif(ip, port, user, pass);
+
+        std::vector<OnvifProfile> profiles;
+        VideoEncoderConfig cfg;
+        if (!onvif.get_profiles(profiles)) {
+            res["onvif"] = false;
+            res["error"] = "Камера не отвечает по ONVIF — удалённая настройка видео недоступна";
+            return crow::response(200, res);
+        }
+        if (!onvif.get_video_encoder_config(profiles.front().token, cfg)) {
+            res["onvif"] = false;
+            res["error"] = "Камера не отдаёт конфигурацию видеокодировщика";
+            return crow::response(200, res);
+        }
+
+        res["onvif"] = true;
+        res["profile"] = profiles.front().name;
+        res["config"]["encoding"] = cfg.encoding;
+        res["config"]["width"] = cfg.width;
+        res["config"]["height"] = cfg.height;
+        res["config"]["fps"] = cfg.fps;
+        res["config"]["bitrate_kbps"] = cfg.bitrate_kbps;
+        res["config"]["quality"] = cfg.quality;
+
+        VideoEncoderOptions opts;
+        if (onvif.get_video_encoder_options(profiles.front().token, cfg.token, opts)) {
+            std::vector<crow::json::wvalue> res_list;
+            for (const auto& [w, h] : opts.resolutions) {
+                crow::json::wvalue item;
+                item["width"] = w;
+                item["height"] = h;
+                res_list.push_back(std::move(item));
+            }
+            res["options"]["resolutions"] = std::move(res_list);
+            res["options"]["fps_min"] = opts.fps_min;
+            res["options"]["fps_max"] = opts.fps_max;
+            res["options"]["bitrate_min"] = opts.bitrate_min;
+            res["options"]["bitrate_max"] = opts.bitrate_max;
+        }
+        return crow::response(200, res);
+    });
+
+    // PATCH /api/camera/video {width, height, fps, bitrate_kbps} — изменение (ADMIN)
+    // ТЗ §29: успех показываем только если камера ФАКТИЧЕСКИ приняла значения.
+    CROW_ROUTE(app, "/api/camera/video").methods(crow::HTTPMethod::PATCH)(
+        [&db, &key_hex, load_creds](const crow::request& req) {
+            if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
+
+            const auto body = crow::json::load(req.body);
+            if (!body) return json_error(400, "Некорректный JSON");
+
+            const auto creds = load_creds();
+            if (!creds) return json_error(400, "Камера не настроена");
+
+            const auto& [ip, port, user, pass_enc] = *creds;
+            const std::string pass = pass_enc.empty() ? "" : crypto::decrypt(pass_enc, key_hex);
+            OnvifClient onvif(ip, port, user, pass);
+
+            std::vector<OnvifProfile> profiles;
+            if (!onvif.get_profiles(profiles))
+                return json_error(400, "Камера не отвечает по ONVIF");
+
+            // полная текущая конфигурация — Set требует вернуть её целиком
+            VideoEncoderConfig cfg;
+            if (!onvif.get_video_encoder_config(profiles.front().token, cfg))
+                return json_error(400, "Камера не отдаёт конфигурацию видеокодировщика");
+
+            const int new_w = body.has("width") ? static_cast<int>(body["width"].i()) : cfg.width;
+            const int new_h = body.has("height") ? static_cast<int>(body["height"].i()) : cfg.height;
+            const int new_fps = body.has("fps") ? static_cast<int>(body["fps"].i()) : cfg.fps;
+            const int new_br = body.has("bitrate_kbps") ? static_cast<int>(body["bitrate_kbps"].i()) : cfg.bitrate_kbps;
+
+            // валидация по опциям камеры, если она их отдаёт
+            VideoEncoderOptions opts;
+            if (onvif.get_video_encoder_options(profiles.front().token, cfg.token, opts)) {
+                if (!opts.resolutions.empty()) {
+                    bool ok = false;
+                    for (const auto& [w, h] : opts.resolutions)
+                        if (w == new_w && h == new_h) { ok = true; break; }
+                    if (!ok) return json_error(400, "Разрешение не поддерживается камерой");
+                }
+                if (opts.fps_max > 0 && (new_fps < opts.fps_min || new_fps > opts.fps_max))
+                    return json_error(400, "FPS вне диапазона камеры");
+                if (opts.bitrate_max > 0 && (new_br < opts.bitrate_min || new_br > opts.bitrate_max))
+                    return json_error(400, "Битрейт вне диапазона камеры");
+            }
+
+            cfg.width = new_w; cfg.height = new_h; cfg.fps = new_fps; cfg.bitrate_kbps = new_br;
+            if (!onvif.set_video_encoder_config(cfg))
+                return json_error(400, "Не поддерживается камерой");
+
+            // перечитываем и проверяем, что камера применила значения
+            VideoEncoderConfig verify;
+            if (onvif.get_video_encoder_config(profiles.front().token, verify) &&
+                (verify.width != new_w || verify.height != new_h ||
+                 (new_fps > 0 && verify.fps != new_fps) ||
+                 (new_br > 0 && verify.bitrate_kbps != new_br))) {
+                spdlog::warn("camera accepted Set but values differ: {}x{} fps={} br={}",
+                             verify.width, verify.height, verify.fps, verify.bitrate_kbps);
+                return json_error(400, "Камера не применила значения");
+            }
+
+            spdlog::info("admin: видео-параметры камеры изменены: {}x{} fps={} bitrate={}",
+                         new_w, new_h, new_fps, new_br);
+            crow::json::wvalue res;
+            res["ok"] = true;
+            res["config"]["width"] = new_w;
+            res["config"]["height"] = new_h;
+            res["config"]["fps"] = new_fps;
+            res["config"]["bitrate_kbps"] = new_br;
             return crow::response(200, res);
         });
 }

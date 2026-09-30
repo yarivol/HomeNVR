@@ -121,6 +121,9 @@ CONNECTED → DISCONNECTED → RECONNECTING → CONNECTED
 См. ТЗ §40. Аутентификация — сессия (HttpOnly cookie). Каждый защищённый endpoint проверяет роль. `/api/admin/*` — только ADMIN.
 
 Дополнительно: `GET /api/admin/logs?lines=N` — хвост файлового лога backend (для вкладки «Логи»).
+Видео-параметры камеры (ТЗ §29/§45): `GET /api/camera/video` (текущие + опции) и
+`PATCH /api/camera/video` (resolution/FPS/bitrate через ONVIF SetVideoEncoderConfiguration
+с полным resend конфигурации и перечитыванием-проверкой; без ONVIF — понятная ошибка).
 
 WebSocket (`/ws`): realtime события `camera.*`, `motion.*`, `recording.*`, `storage.*`, `export.*` (ТЗ §41).
 
@@ -134,7 +137,7 @@ WebSocket (`/ws`): realtime события `camera.*`, `motion.*`, `recording.*`
 /                 — главная: live HLS-плеер, статус камеры, последние события, WS-realtime
 /archive          — выбор даты, список сегментов, HLS-просмотр, скачивание MP4
 /events           — события движения за выбранный день с thumbnails
-/admin            — 7 вкладок: камера, запись, motion, хранилище, пользователи, система, логи
+/admin            — 8 вкладок: камера, видео, запись, motion, хранилище, пользователи, система, логи
 ```
 
 Ключевые файлы: `lib/api.ts` (fetch + редирект на 401), `lib/useAuth.ts` (guard + setup-check),

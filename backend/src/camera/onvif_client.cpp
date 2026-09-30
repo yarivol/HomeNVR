@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstring>
 #include <ctime>
+#include <sstream>
 
 #include "../common/crypto.hpp"
 
@@ -87,6 +88,8 @@ bool OnvifClient::get_profiles(std::vector<OnvifProfile>& out) {
         OnvifProfile p;
         p.name  = profile.attribute("Name").value();
         p.token = profile.attribute("token").value();
+        if (auto vec = find_node(profile, "VideoEncoderConfiguration"))
+            p.vec_token = vec.attribute("token").value();
         if (auto res = find_node(profile, "Resolution")) {
             p.width  = find_node(res, "Width").text().as_int();
             p.height = find_node(res, "Height").text().as_int();
@@ -118,6 +121,136 @@ bool OnvifClient::get_stream_uri(const std::string& profile_token, std::string& 
 
     out_uri = node_text(doc, "Uri");
     return !out_uri.empty();
+}
+
+bool OnvifClient::get_video_encoder_config(const std::string& profile_token, VideoEncoderConfig& out) {
+    if (!resolve_media_url()) return false;
+
+    // узнаём token encoder-конфигурации нужного профиля
+    std::vector<OnvifProfile> profiles;
+    if (!get_profiles(profiles)) return false;
+    std::string vec_token;
+    for (const auto& p : profiles)
+        if (p.token == profile_token) { vec_token = p.vec_token; break; }
+
+    const std::string resp = request(media_url_,
+        "<trt:GetVideoEncoderConfigurations xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\"/>");
+    if (resp.empty()) return false;
+
+    pugi::xml_document doc;
+    if (!doc.load_string(resp.c_str())) return false;
+
+    for (auto& cfg : find_all(doc, "Configurations")) {
+        if (!vec_token.empty() && vec_token != cfg.attribute("token").value()) continue;
+
+        out.token    = cfg.attribute("token").value();
+        out.encoding = node_text(cfg, "Encoding");
+        out.quality  = static_cast<int>(node_text(cfg, "Quality").empty()
+                                            ? 0 : std::atof(node_text(cfg, "Quality").c_str()));
+        if (auto res = find_node(cfg, "Resolution")) {
+            out.width  = find_node(res, "Width").text().as_int();
+            out.height = find_node(res, "Height").text().as_int();
+        }
+        if (auto rc = find_node(cfg, "RateControl")) {
+            out.fps          = find_node(rc, "FrameRateLimit").text().as_int();
+            out.bitrate_kbps = find_node(rc, "BitrateLimit").text().as_int();
+        }
+
+        // сохраняем сырой XML узла — при Set нужно вернуть ПОЛНУЮ конфигурацию
+        pugi::xml_document tmp;
+        tmp.append_copy(cfg);
+        std::ostringstream oss;
+        tmp.first_child().print(oss, "", pugi::format_raw);
+        out.raw_xml = oss.str();
+        spdlog::info("onvif video config: {}x{} fps={} bitrate={} kbps ({})",
+                     out.width, out.height, out.fps, out.bitrate_kbps, out.encoding);
+        return !out.token.empty();
+    }
+    return false;
+}
+
+bool OnvifClient::get_video_encoder_options(const std::string& profile_token,
+                                            const std::string& config_token,
+                                            VideoEncoderOptions& out) {
+    if (!resolve_media_url()) return false;
+
+    const std::string body =
+        "<trt:GetVideoEncoderConfigurationOptions xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\">"
+        "<trt:ConfigurationToken>" + config_token + "</trt:ConfigurationToken>"
+        "<trt:ProfileToken>" + profile_token + "</trt:ProfileToken>"
+        "</trt:GetVideoEncoderConfigurationOptions>";
+
+    const std::string resp = request(media_url_, body);
+    if (resp.empty()) return false;
+
+    pugi::xml_document doc;
+    if (!doc.load_string(resp.c_str())) return false;
+
+    // поддерживаемые разрешения
+    for (auto& res : find_all(doc, "ResolutionsAvailable")) {
+        const int w = find_node(res, "Width").text().as_int();
+        const int h = find_node(res, "Height").text().as_int();
+        if (w > 0 && h > 0) out.resolutions.emplace_back(w, h);
+    }
+    // диапазоны FPS / битрейта / качества (IntRange: Min/Max)
+    auto range = [&](const char* name) -> std::pair<int, int> {
+        if (auto fr = find_node(doc, name))
+            return {find_node(fr, "Min").text().as_int(), find_node(fr, "Max").text().as_int()};
+        return {0, 0};
+    };
+    const auto fps_r = range("FrameRateRange");
+    out.fps_min = fps_r.first; out.fps_max = fps_r.second;
+    const auto br_r = range("BitrateRange");
+    out.bitrate_min = br_r.first; out.bitrate_max = br_r.second;
+    const auto q_r = range("QualityRange");
+    out.quality_min = q_r.first; out.quality_max = q_r.second;
+
+    return !out.resolutions.empty() || out.fps_max > 0;
+}
+
+bool OnvifClient::set_video_encoder_config(const VideoEncoderConfig& cfg) {
+    if (!resolve_media_url()) return false;
+    if (cfg.raw_xml.empty()) return false;
+
+    // модифицируем сохранённый XML конфигурации: подставляем новые значения
+    pugi::xml_document doc;
+    if (!doc.load_string(cfg.raw_xml.c_str())) return false;
+    auto root = doc.first_child();
+
+    auto set_child_int = [](pugi::xml_node parent, const char* local, int value) {
+        if (auto node = find_node(parent, local))
+            node.text().set(std::to_string(value).c_str());
+    };
+    if (auto res = find_node(root, "Resolution")) {
+        set_child_int(res, "Width", cfg.width);
+        set_child_int(res, "Height", cfg.height);
+    }
+    if (auto rc = find_node(root, "RateControl")) {
+        set_child_int(rc, "FrameRateLimit", cfg.fps);
+        set_child_int(rc, "BitrateLimit", cfg.bitrate_kbps);
+    }
+    if (cfg.quality > 0) set_child_int(root, "Quality", cfg.quality);
+
+    std::ostringstream oss;
+    root.print(oss, "", pugi::format_raw);
+
+    const std::string body =
+        "<trt:SetVideoEncoderConfiguration xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\">"
+        "<trt:Configuration token=\"" + cfg.token + "\">" + oss.str() + "</trt:Configuration>"
+        "<trt:ForcePersistence>true</trt:ForcePersistence>"
+        "</trt:SetVideoEncoderConfiguration>";
+
+    const std::string resp = request(media_url_, body);
+    if (resp.empty()) return false;
+
+    // SOAP fault = камера отклонила изменение
+    if (resp.find("Fault") != std::string::npos) {
+        spdlog::warn("onvif set video config rejected by camera");
+        return false;
+    }
+    spdlog::info("onvif video config set: {}x{} fps={} bitrate={} kbps",
+                 cfg.width, cfg.height, cfg.fps, cfg.bitrate_kbps);
+    return true;
 }
 
 bool OnvifClient::resolve_media_url() {

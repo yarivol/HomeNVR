@@ -96,6 +96,9 @@ if [ -n "$PASS" ]; then
   t "GET /api/admin/logs"       200 "$BASE/api/admin/logs?lines=20"
   grep -q '"lines"' /tmp/smoke_body && { echo "PASS  логи возвращают JSON со строками"; PASS_COUNT=$((PASS_COUNT+1)); } \
     || { echo "FAIL  логи: нет поля lines"; FAIL_COUNT=$((FAIL_COUNT+1)); }
+  t "GET /api/camera/video"     200 "$BASE/api/camera/video"
+  t "PATCH /api/camera/video без ONVIF -> 400" 400 -X PATCH "$BASE/api/camera/video" \
+    -H 'Content-Type: application/json' -d '{"fps":15}'
 fi
 
 rm -f "$COOKIE"
