@@ -40,21 +40,36 @@ export default function HomePage() {
       .then((r) => setEvents(r.events.slice(0, 5)))
       .catch(() => {});
 
-    // realtime-обновления через WebSocket (ТЗ §41)
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
-    ws.onmessage = (msg) => {
-      try {
-        const { event } = JSON.parse(msg.data);
-        if (event.startsWith("camera."))
-          apiJson<CameraInfo>("/api/camera").then(setCamera).catch(() => {});
-        if (event === "motion.ended")
-          apiJson<{ events: MotionEvent[] }>("/api/events")
-            .then((r) => setEvents(r.events.slice(0, 5)))
-            .catch(() => {});
-      } catch {}
+    // realtime-обновления через WebSocket (ТЗ §41), с автореконнектом —
+    // backend может перезапуститься, соединение надо поднимать заново
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const connect = () => {
+      if (closed) return;
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onmessage = (msg) => {
+        try {
+          const { event } = JSON.parse(msg.data);
+          if (event.startsWith("camera."))
+            apiJson<CameraInfo>("/api/camera").then(setCamera).catch(() => {});
+          if (event === "motion.ended")
+            apiJson<{ events: MotionEvent[] }>("/api/events")
+              .then((r) => setEvents(r.events.slice(0, 5)))
+              .catch(() => {});
+        } catch {}
+      };
+      ws.onclose = () => {
+        if (!closed) retry = setTimeout(connect, 5000);
+      };
     };
-    return () => ws.close();
+    connect();
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      ws?.close();
+    };
   }, [user]);
 
   if (loading || !user) return null;
