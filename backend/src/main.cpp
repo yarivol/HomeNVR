@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include "api/routes.hpp"
+#include "auth/session.hpp"
 #include "camera/camera_manager.hpp"
 #include "common/config.hpp"
 #include "common/crypto.hpp"
@@ -131,7 +132,7 @@ int main() {
         res["recording"] = recorder.state_str();
         res["motion"] = motion.enabled() ? "enabled" : "disabled";
         res["storage_percent"] = static_cast<int>(storage.stats().usage_percent * 100);
-        return res;
+        return crow::response(200, res);
     });
 
     // WebSocket (ТЗ §41)
@@ -140,7 +141,7 @@ int main() {
             spdlog::info("ws client connected");
             ws_hub.add(&conn);
         })
-        .onclose([&ws_hub](crow::websocket::connection& conn, const std::string&, uint16_t) {
+        .onclose([&ws_hub](crow::websocket::connection& conn, const std::string&) {
             ws_hub.remove(&conn);
         })
         .onmessage([](crow::websocket::connection&, const std::string&, bool) {});
