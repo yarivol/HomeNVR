@@ -95,7 +95,12 @@ void StorageManager::enforce_limit(const Stats& s) {
         }
     }();
 
-    if (!overwrite_enabled || s.usage_percent < threshold) return;
+    if (!overwrite_enabled || s.usage_percent < threshold) {
+        // периодический debug-снимок: помогает понять, почему очистка (не) сработала
+        spdlog::debug("storage: занято {:.1f}% (архив {:.1f} ГБ), порог {:.0f}%",
+                      s.usage_percent * 100, s.archive_bytes / 1073741824.0, threshold * 100);
+        return;
+    }
 
     spdlog::warn("storage limit reached ({:.0f}%, threshold {:.0f}%), deleting oldest segments",
                  s.usage_percent * 100, threshold * 100);

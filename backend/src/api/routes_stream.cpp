@@ -78,13 +78,13 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
 
     // GET /api/recordings?date=YYYY-MM-DD — сегменты за день (для таймлайна архива)
     CROW_ROUTE(app, "/api/recordings")([&db](const crow::request& req) {
-        if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
+        if (!auth::require_user(req, db)) return json_error(401, "Нет авторизации");
 
         const char* date = req.url_params.get("date");
-        if (!date) return json_error(400, "date required (YYYY-MM-DD)");
+        if (!date) return json_error(400, "Укажите дату (ГГГГ-ММ-ДД)");
         const std::string d = date;
         if (d.size() != 10 || d[4] != '-' || d[7] != '-')
-            return json_error(400, "invalid date format");
+            return json_error(400, "Некорректный формат даты");
 
         try {
             return db.tx([&](pqxx::work& w) {
@@ -108,7 +108,7 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
             });
         } catch (const std::exception& e) {
             spdlog::error("GET /api/recordings failed: {}", e.what());
-            return json_error(500, "internal error");
+            return json_error(500, "Внутренняя ошибка сервера");
         }
     });
 
@@ -116,11 +116,11 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
     // ISO 8601: "2026-09-30T18:30:00+03:00"
     CROW_ROUTE(app, "/api/archive/session").methods(crow::HTTPMethod::POST)(
         [&db, &hls_path, &recordings_path](const crow::request& req) {
-            if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
+            if (!auth::require_user(req, db)) return json_error(401, "Нет авторизации");
 
             const auto body = crow::json::load(req.body);
             if (!body || !body.has("start") || !body.has("end"))
-                return json_error(400, "start and end required (ISO 8601)");
+                return json_error(400, "Укажите начало и конец периода");
 
             const std::string start = body["start"].s();
             const std::string end = body["end"].s();
@@ -157,11 +157,13 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                 segments = std::move(res.first);
                 duration_sec = res.second;
             } catch (...) {
-                return json_error(400, "invalid time range");
+                return json_error(400, "Некорректный период времени");
             }
             if (segments.empty()) return json_error(404, "Записи за этот период не найдены");
 
             const std::string token = random_token();
+            spdlog::info("archive session {}: {} сегментов, {} сек ({} .. {})",
+                         token, segments.size(), duration_sec, start, end);
             const auto dir = std::filesystem::path(hls_path) / token;
             std::filesystem::create_directories(dir);
 
@@ -195,8 +197,10 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
 
             if (status != 0 || !std::filesystem::exists(playlist)) {
                 std::filesystem::remove_all(dir);
+                spdlog::error("archive session {}: ffmpeg завершился с кодом {}", token, status);
                 return json_error(500, "Не удалось подготовить запись");
             }
+            spdlog::debug("archive session {}: плейлист готов", token);
 
             crow::json::wvalue res;
             res["url"] = "/stream/archive/" + token + "/index.m3u8";
@@ -206,29 +210,31 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
     // POST /api/export {start, end} — задача на скачивание MP4 (ТЗ §15)
     CROW_ROUTE(app, "/api/export").methods(crow::HTTPMethod::POST)(
         [&db, &exporter](const crow::request& req) {
-            if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
+            if (!auth::require_user(req, db)) return json_error(401, "Нет авторизации");
 
             const auto body = crow::json::load(req.body);
             if (!body || !body.has("start") || !body.has("end"))
-                return json_error(400, "start and end required (ISO 8601)");
+                return json_error(400, "Укажите начало и конец периода");
 
             try {
                 const long long id = exporter.create(body["start"].s(), body["end"].s());
+                spdlog::info("export #{} создан: {} .. {}", id,
+                             std::string(body["start"].s()), std::string(body["end"].s()));
                 crow::json::wvalue res;
                 res["id"] = id;
                 res["status"] = "QUEUED";
                 return crow::response(200, res);
             } catch (const std::invalid_argument&) {
-                return json_error(400, "invalid time range");
+                return json_error(400, "Некорректный период времени");
             }
         });
 
     // GET /api/export/:id — статус задачи
     CROW_ROUTE(app, "/api/export/<int>")
     ([&db, &exporter](const crow::request& req, int id) {
-        if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
+        if (!auth::require_user(req, db)) return json_error(401, "Нет авторизации");
         const auto info = exporter.get(id);
-        if (!info) return json_error(404, "not found");
+        if (!info) return json_error(404, "Не найдено");
         crow::json::wvalue res;
         res["id"] = info->id;
         res["status"] = info->status;
@@ -243,10 +249,10 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
     // nginx отдаёт файл с поддержкой Range Requests (ТЗ §15).
     CROW_ROUTE(app, "/api/export/<int>/download")
     ([&db, &exporter](const crow::request& req, int id) {
-        if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
+        if (!auth::require_user(req, db)) return json_error(401, "Нет авторизации");
         const auto info = exporter.get(id);
         if (!info || info->status != "READY" || info->file_name.empty())
-            return json_error(404, "not ready");
+            return json_error(404, "Файл ещё не готов");
 
         crow::response res(200);
         res.set_header("X-Accel-Redirect", "/internal/exports/" + info->file_name);

@@ -40,7 +40,10 @@ void CameraManager::set_state(CameraState s) {
     if (prev == s) return;
 
     const std::string event = "camera." + state_str();
-    spdlog::info("camera state: {} -> {}", static_cast<int>(prev), static_cast<int>(s));
+    // человекочитаемый переход состояния
+    static const char* names[] = {"disconnected", "reconnecting", "connected"};
+    const auto name_of = [](CameraState st) { return names[static_cast<int>(st)]; };
+    spdlog::info("camera state: {} -> {}", name_of(prev), name_of(s));
     if (event_fn_) event_fn_(event, "{}");
 }
 

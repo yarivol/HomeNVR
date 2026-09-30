@@ -27,7 +27,7 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
                             CameraManager& cam, SegmentRecorder& recorder, LiveStream& live) {
     // GET /api/camera — настройки без секретов + текущий статус
     CROW_ROUTE(app, "/api/camera")([&db, &cam](const crow::request& req) {
-        if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
+        if (!auth::require_user(req, db)) return json_error(401, "Нет авторизации");
 
         crow::json::wvalue res;
         res["status"] = cam.state_str();
@@ -68,7 +68,7 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
             });
         } catch (const std::exception& e) {
             spdlog::error("GET /api/camera failed: {}", e.what());
-            return json_error(500, "internal error");
+            return json_error(500, "Внутренняя ошибка сервера");
         }
         return crow::response(200, res);
     });
@@ -77,10 +77,10 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
     // body: {name?, ip?, onvif_port?, username?, password?, rtsp_url?, rtsp_sub_url?, enabled?}
     CROW_ROUTE(app, "/api/camera").methods(crow::HTTPMethod::PATCH)(
         [&db, &key_hex, &cam, &recorder, &live](const crow::request& req) {
-            if (!auth::require_admin(req, db)) return json_error(403, "admin only");
+            if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
 
             const auto body = crow::json::load(req.body);
-            if (!body) return json_error(400, "invalid json");
+            if (!body) return json_error(400, "Некорректный JSON");
 
             try {
                 db.tx([&](pqxx::work& w) {
@@ -132,8 +132,20 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
                 });
             } catch (const std::exception& e) {
                 spdlog::error("PATCH /api/camera failed: {}", e.what());
-                return json_error(500, "internal error");
+                return json_error(500, "Внутренняя ошибка сервера");
             }
+
+            // аудит изменений (без секретов: пароли/URL не логируем)
+            std::string changed;
+            for (const char* k : {"name", "ip", "onvif_port", "username", "password",
+                                  "enabled", "rtsp_url", "rtsp_sub_url"})
+                if (body.has(k)) {
+                    if (!changed.empty()) changed += ", ";
+                    changed += k;
+                    if (std::string(k) == "enabled")
+                        changed += std::string("=") + (body["enabled"].b() ? "true" : "false");
+                }
+            spdlog::info("admin: настройки камеры изменены: {}", changed);
 
             cam.reload();
             recorder.reload();
@@ -147,7 +159,7 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
     // body: {ip, onvif_port, username, password, rtsp_url?}
     CROW_ROUTE(app, "/api/camera/test").methods(crow::HTTPMethod::POST)(
         [&db](const crow::request& req) {
-            if (!auth::require_admin(req, db)) return json_error(403, "admin only");
+            if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
 
             const auto body = crow::json::load(req.body);
             if (!body || !body.has("ip"))

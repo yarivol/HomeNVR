@@ -7,7 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type Tab = "camera" | "recording" | "motion" | "storage" | "users" | "system";
+type Tab = "camera" | "recording" | "motion" | "storage" | "users" | "system" | "logs";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "camera", label: "Камера" },
@@ -16,6 +16,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "storage", label: "Хранилище" },
   { id: "users", label: "Пользователи" },
   { id: "system", label: "Система" },
+  { id: "logs", label: "Логи" },
 ];
 
 const input =
@@ -63,6 +64,7 @@ export default function AdminPage() {
       {tab === "storage" && <StorageTab />}
       {tab === "users" && <UsersTab />}
       {tab === "system" && <SystemTab />}
+      {tab === "logs" && <LogsTab />}
     </main>
   );
 }
@@ -369,6 +371,15 @@ function UsersTab() {
 }
 
 /* ---------------- Система (ТЗ §50) ---------------- */
+// Русские подписи статусов — backend отдаёт машинные значения
+const STATUS_RU: Record<string, Record<string, string>> = {
+  camera: { connected: "Подключена", disconnected: "Недоступна", reconnecting: "Переподключение…" },
+  recording: { running: "Идёт запись", stopped: "Остановлена", error: "Ошибка" },
+  motion: { enabled: "Включена", disabled: "Выключена" },
+  database: { ok: "ОК", error: "Ошибка" },
+  backend: { ok: "ОК", error: "Ошибка" },
+};
+
 function SystemTab() {
   const [status, setStatus] = useState<Record<string, string | number> | null>(null);
 
@@ -382,14 +393,68 @@ function SystemTab() {
 
   if (!status) return <div className={card}><p className="text-neutral-400">Загрузка…</p></div>;
 
+  const ru = (key: string) => STATUS_RU[key]?.[String(status[key])] ?? String(status[key]);
+
   return (
     <div className={card}>
-      <Row label="Камера" value={String(status.camera)} />
-      <Row label="Запись" value={String(status.recording)} />
-      <Row label="Детекция движения" value={String(status.motion)} />
+      <Row label="Камера" value={ru("camera")} />
+      <Row label="Запись" value={ru("recording")} />
+      <Row label="Детекция движения" value={ru("motion")} />
       <Row label="Диск занят" value={`${status.storage_percent}%`} />
-      <Row label="База данных" value={String(status.database)} />
-      <Row label="Backend" value={String(status.backend)} />
+      <Row label="База данных" value={ru("database")} />
+      <Row label="Backend" value={ru("backend")} />
+    </div>
+  );
+}
+
+/* ---------------- Логи (просмотр backend.log) ---------------- */
+const LOG_LEVELS = ["все", "info", "warning", "error", "debug"] as const;
+
+function LogsTab() {
+  const [lines, setLines] = useState<string[]>([]);
+  const [filter, setFilter] = useState<(typeof LOG_LEVELS)[number]>("все");
+  const [auto, setAuto] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      apiJson<{ lines: string[] }>("/api/admin/logs?lines=500")
+        .then((r) => { if (alive) { setLines(r.lines); setError(""); } })
+        .catch((e) => { if (alive) setError(e.message); });
+    load();
+    if (!auto) return () => { alive = false; };
+    const t = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, [auto]);
+
+  // фильтр по уровню: строка вида "[...] [info] сообщение"
+  const shown = filter === "все"
+    ? lines
+    : lines.filter((l) => l.includes(`[${filter}]`));
+
+  return (
+    <div className={card}>
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as typeof filter)}
+          className="rounded-xl border border-neutral-200 px-3 py-2"
+        >
+          {LOG_LEVELS.map((l) => (
+            <option key={l} value={l}>{l === "все" ? "Все уровни" : l}</option>
+          ))}
+        </select>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+          Обновлять каждые 5 сек
+        </label>
+        <span className="text-sm text-neutral-400">{shown.length} строк</span>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <pre className="max-h-[60vh] overflow-auto rounded-xl bg-neutral-900 p-3 text-xs leading-5 text-neutral-100">
+        {shown.length ? shown.join("\n") : "Лог пуст"}
+      </pre>
     </div>
   );
 }

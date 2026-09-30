@@ -38,7 +38,15 @@ int main() {
     } catch (const std::exception& e) {
         // файловый sink недоступен — продолжаем с выводом в stdout
     }
-    spdlog::set_level(spdlog::level::info);
+    // Уровень логов из LOG_LEVEL (debug/info/warn/error), по умолчанию info
+    {
+        const char* lvl = std::getenv("LOG_LEVEL");
+        const std::string s = lvl ? lvl : "info";
+        if (s == "debug") spdlog::set_level(spdlog::level::debug);
+        else if (s == "warn") spdlog::set_level(spdlog::level::warn);
+        else if (s == "error") spdlog::set_level(spdlog::level::err);
+        else spdlog::set_level(spdlog::level::info);
+    }
     spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] %v");
     spdlog::info("HomeNVR backend starting");
 
@@ -158,9 +166,11 @@ int main() {
         .onopen([&ws_hub](crow::websocket::connection& conn) {
             spdlog::info("ws client connected");
             ws_hub.add(&conn);
+            spdlog::debug("ws client connected (total: {})", ws_hub.size());
         })
-        .onclose([&ws_hub](crow::websocket::connection& conn, const std::string&) {
+        .onclose([&ws_hub](crow::websocket::connection& conn, const std::string& reason) {
             ws_hub.remove(&conn);
+            spdlog::debug("ws client disconnected: {}", reason);
         })
         .onmessage([](crow::websocket::connection&, const std::string&, bool) {});
 
@@ -172,7 +182,7 @@ int main() {
     api::register_events_routes(app, db, cfg.thumbnails_path);
     api::register_stream_routes(app, db, exporter, cfg.live_path, cfg.hls_path,
                                 cfg.recordings_path);
-    api::register_admin_routes(app, db, motion, recorder);
+    api::register_admin_routes(app, db, motion, recorder, cfg.logs_path);
 
     spdlog::info("listening on port {}", cfg.port);
     app.port(cfg.port).multithreaded().run();

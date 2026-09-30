@@ -18,6 +18,11 @@ public:
         conns_.erase(conn);
     }
 
+    size_t size() const {
+        std::lock_guard lock(mutex_);
+        return conns_.size();
+    }
+
     // event — имя события ("camera.connected"), payload — JSON-объект строкой
     void broadcast(const std::string& event, const std::string& payload = "{}") {
         const std::string msg = "{\"event\":\"" + event + "\",\"data\":" + payload + "}";
@@ -26,6 +31,6 @@ public:
     }
 
 private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::unordered_set<crow::websocket::connection*> conns_;
 };

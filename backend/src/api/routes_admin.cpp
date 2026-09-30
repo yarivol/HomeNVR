@@ -4,6 +4,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include <fstream>
+#include <vector>
+#include <cstdlib>
+
 #include "../auth/password_hash.hpp"
 #include "../auth/session.hpp"
 #include "../motion/motion_detector.hpp"
@@ -29,10 +33,10 @@ const std::unordered_map<std::string, bool> kAllowedSettings = {
 }  // namespace
 
 void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetector& motion,
-                           SegmentRecorder& recorder) {
+                           SegmentRecorder& recorder, const std::string& logs_path) {
     // GET /api/admin/settings — все настройки
     CROW_ROUTE(app, "/api/admin/settings")([&db](const crow::request& req) {
-        if (!auth::require_admin(req, db)) return json_error(403, "admin only");
+        if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
         try {
             return db.tx([](pqxx::work& w) {
                 const auto r = w.exec("SELECT key, value::text FROM system_settings");
@@ -46,19 +50,20 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             });
         } catch (const std::exception& e) {
             spdlog::error("GET /api/admin/settings failed: {}", e.what());
-            return json_error(500, "internal error");
+            return json_error(500, "Внутренняя ошибка сервера");
         }
     });
 
     // PATCH /api/admin/settings {key: value, ...}
     CROW_ROUTE(app, "/api/admin/settings").methods(crow::HTTPMethod::PATCH)(
         [&db, &motion, &recorder](const crow::request& req) {
-            if (!auth::require_admin(req, db)) return json_error(403, "admin only");
+            if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
 
             const auto body = crow::json::load(req.body);
-            if (!body) return json_error(400, "invalid json");
+            if (!body) return json_error(400, "Некорректный JSON");
 
             try {
+                std::string changed;
                 db.tx([&](pqxx::work& w) {
                     for (const auto& key : body.keys()) {
                         if (!kAllowedSettings.count(key)) continue;  // незнакомый ключ — молча пропускаем
@@ -69,11 +74,14 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
                             "VALUES ($1, $2::jsonb, now()) "
                             "ON CONFLICT (key) DO UPDATE SET value=$2::jsonb, updated_at=now()",
                             key, json_str);
+                        if (!changed.empty()) changed += ", ";
+                        changed += std::string(key) + "=" + json_str;
                     }
                 });
+                if (!changed.empty()) spdlog::info("admin: настройки изменены: {}", changed);
             } catch (const std::exception& e) {
                 spdlog::error("PATCH /api/admin/settings failed: {}", e.what());
-                return json_error(500, "internal error");
+                return json_error(500, "Внутренняя ошибка сервера");
             }
 
             // настройки записи/motion применяются на лету
@@ -87,7 +95,7 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
 
     // GET /api/admin/users — список пользователей (без хешей!)
     CROW_ROUTE(app, "/api/admin/users")([&db](const crow::request& req) {
-        if (!auth::require_admin(req, db)) return json_error(403, "admin only");
+        if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
         try {
             return db.tx([](pqxx::work& w) {
                 const auto r = w.exec(
@@ -109,25 +117,25 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             });
         } catch (const std::exception& e) {
             spdlog::error("GET /api/admin/users failed: {}", e.what());
-            return json_error(500, "internal error");
+            return json_error(500, "Внутренняя ошибка сервера");
         }
     });
 
     // POST /api/admin/users {username, password, role}
     CROW_ROUTE(app, "/api/admin/users").methods(crow::HTTPMethod::POST)(
         [&db](const crow::request& req) {
-            if (!auth::require_admin(req, db)) return json_error(403, "admin only");
+            if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
 
             const auto body = crow::json::load(req.body);
             if (!body || !body.has("username") || !body.has("password"))
-                return json_error(400, "username and password required");
+                return json_error(400, "Укажите имя пользователя и пароль");
 
             const std::string username = body["username"].s();
             const std::string role = body.has("role") ? std::string(body["role"].s()) : "USER";
             if (username.empty() || username.size() > 64)
-                return json_error(400, "invalid username");
+                return json_error(400, "Некорректное имя пользователя");
             if (role != "USER" && role != "ADMIN")
-                return json_error(400, "invalid role");
+                return json_error(400, "Некорректная роль");
 
             std::string hash;
             try {
@@ -157,10 +165,10 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
     CROW_ROUTE(app, "/api/admin/users/<int>").methods(crow::HTTPMethod::PATCH)(
         [&db](const crow::request& req, int id) {
             const auto admin = auth::require_admin(req, db);
-            if (!admin) return json_error(403, "admin only");
+            if (!admin) return json_error(403, "Требуются права администратора");
 
             const auto body = crow::json::load(req.body);
-            if (!body) return json_error(400, "invalid json");
+            if (!body) return json_error(400, "Некорректный JSON");
 
             // админ не может отключить сам себя
             if (body.has("enabled") && !static_cast<bool>(body["enabled"].b()) && admin->id == id)
@@ -189,7 +197,7 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
                 return json_error(400, e.what());
             } catch (const std::exception& e) {
                 spdlog::error("PATCH /api/admin/users failed: {}", e.what());
-                return json_error(500, "internal error");
+                return json_error(500, "Внутренняя ошибка сервера");
             }
 
             crow::json::wvalue res;
@@ -201,7 +209,7 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
     CROW_ROUTE(app, "/api/admin/users/<int>").methods(crow::HTTPMethod::DELETE)(
         [&db](const crow::request& req, int id) {
             const auto admin = auth::require_admin(req, db);
-            if (!admin) return json_error(403, "admin only");
+            if (!admin) return json_error(403, "Требуются права администратора");
             if (admin->id == id) return json_error(400, "Нельзя удалить самого себя");
 
             db.tx([&](pqxx::work& w) {
@@ -213,6 +221,47 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             res["ok"] = true;
             return crow::response(200, res);
         });
+
+    // GET /api/admin/logs?lines=N — хвост файлового лога backend (отладка)
+    CROW_ROUTE(app, "/api/admin/logs")([&db, &logs_path](const crow::request& req) {
+        if (!auth::require_admin(req, db)) return json_error(403, "Требуются права администратора");
+
+        int want = 300;
+        if (const char* p = req.url_params.get("lines")) {
+            want = std::atoi(p);
+            if (want < 10) want = 10;
+            if (want > 2000) want = 2000;
+        }
+
+        const std::string path = logs_path + "/backend.log";
+        std::ifstream f(path, std::ios::binary | std::ios::ate);
+        if (!f) return json_error(404, "Файл лога не найден");
+
+        // читаем максимум последние 256 КБ — хвост лога
+        const auto size = static_cast<std::streamoff>(f.tellg());
+        const std::streamoff tail = std::min<std::streamoff>(size, 256 * 1024);
+        f.seekg(size - tail);
+        std::string buf(static_cast<size_t>(tail), '\0');
+        f.read(buf.data(), tail);
+
+        // режем на строки и берём последние want
+        std::vector<std::string> lines;
+        std::string cur;
+        for (char c : buf) {
+            if (c == '\n') { lines.push_back(std::move(cur)); cur.clear(); }
+            else if (c != '\r') cur += c;
+        }
+        if (!cur.empty()) lines.push_back(std::move(cur));
+        if (lines.size() > static_cast<size_t>(want))
+            lines.erase(lines.begin(), lines.end() - want);
+
+        crow::json::wvalue res;
+        std::vector<crow::json::wvalue> out;
+        out.reserve(lines.size());
+        for (auto& l : lines) out.push_back(crow::json::wvalue(std::move(l)));
+        res["lines"] = std::move(out);
+        return crow::response(200, res);
+    });
 }
 
 }  // namespace api

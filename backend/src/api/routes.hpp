@@ -26,6 +26,6 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                             const std::string& live_path, const std::string& hls_path,
                             const std::string& recordings_path);
 void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetector& motion,
-                           SegmentRecorder& recorder);
+                           SegmentRecorder& recorder, const std::string& logs_path);
 
 }  // namespace api

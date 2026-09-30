@@ -62,12 +62,12 @@ void register_auth_routes(crow::SimpleApp& app, db::Database& db) {
 
         const auto body = crow::json::load(req.body);
         if (!body || !body.has("username") || !body.has("password"))
-            return json_error(400, "username and password required");
+            return json_error(400, "Укажите имя пользователя и пароль");
 
         const std::string username = body["username"].s();
         const std::string password = body["password"].s();
         if (username.size() > 64 || password.size() > 128)
-            return json_error(400, "invalid input");
+            return json_error(400, "Некорректные данные");
 
         // ищем пользователя
         auto user = db.tx([&](pqxx::work& w) -> std::optional<std::tuple<int, std::string, bool>> {
@@ -119,7 +119,7 @@ void register_auth_routes(crow::SimpleApp& app, db::Database& db) {
     // GET /api/auth/me
     CROW_ROUTE(app, "/api/auth/me")([&db](const crow::request& req) {
         const auto user = auth::authenticate(req, db);
-        if (!user) return json_error(401, "unauthorized");
+        if (!user) return json_error(401, "Нет авторизации");
         crow::json::wvalue res;
         res["id"] = user->id;
         res["username"] = user->username;

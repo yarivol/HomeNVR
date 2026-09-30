@@ -43,7 +43,7 @@ long long Exporter::create(const std::string& start_iso, const std::string& end_
             return r[0]["id"].as<long long>();
         });
     } catch (const std::exception& e) {
-        throw std::invalid_argument("invalid time range");
+        throw std::invalid_argument("Некорректный период времени");
     }
 }
 

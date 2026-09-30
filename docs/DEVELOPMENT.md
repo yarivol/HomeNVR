@@ -84,6 +84,9 @@ docker compose restart nginx        # применить изменения ngin
   unhealthy-контейнер автоматически (защита от зависаний).
 - Логи docker: ротация json-file 10MB × 3; backend пишет также в
   `data/logs/backend.log` (spdlog rotating, 10MB × 3).
+- Просмотр логов из UI: админка → вкладка «Логи» (`GET /api/admin/logs`, только ADMIN).
+- Уровень логов backend: env `LOG_LEVEL` (`debug`/`info`/`warn`/`error`, по умолчанию `info`).
+  Для подробной отладки: `LOG_LEVEL=debug` в `docker-compose.yml` у backend + recreate.
 
 ## После перезагрузки сервера
 

@@ -23,7 +23,7 @@ void register_events_routes(crow::SimpleApp& app, db::Database& db,
                             const std::string& thumbnails_path) {
     // GET /api/events?date=YYYY-MM-DD — события за день (без date — последние 50)
     CROW_ROUTE(app, "/api/events")([&db](const crow::request& req) {
-        if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
+        if (!auth::require_user(req, db)) return json_error(401, "Нет авторизации");
 
         const char* date = req.url_params.get("date");
         try {
@@ -33,7 +33,7 @@ void register_events_routes(crow::SimpleApp& app, db::Database& db,
                     // строгая валидация формата даты
                     const std::string d = date;
                     if (d.size() != 10 || d[4] != '-' || d[7] != '-')
-                        return crow::response(400, "invalid date format");
+                        return crow::response(400, "Некорректный формат даты");
                     r = w.exec_params(
                         "SELECT id, started_at::text, ended_at::text, motion_score, thumbnail_path "
                         "FROM motion_events WHERE camera_id=1 AND started_at::date = $1::date "
@@ -63,7 +63,7 @@ void register_events_routes(crow::SimpleApp& app, db::Database& db,
             });
         } catch (const std::exception& e) {
             spdlog::error("GET /api/events failed: {}", e.what());
-            return json_error(500, "internal error");
+            return json_error(500, "Внутренняя ошибка сервера");
         }
     });
 

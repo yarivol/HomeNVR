@@ -42,12 +42,12 @@ void register_setup_routes(crow::SimpleApp& app, db::Database& db, const std::st
 
             const auto body = crow::json::load(req.body);
             if (!body || !body.has("username") || !body.has("password"))
-                return json_error(400, "username and password required");
+                return json_error(400, "Укажите имя пользователя и пароль");
 
             const std::string username = body["username"].s();
             const std::string password = body["password"].s();
             if (username.empty() || username.size() > 64)
-                return json_error(400, "invalid username");
+                return json_error(400, "Некорректное имя пользователя");
 
             std::string hash;
             try {
