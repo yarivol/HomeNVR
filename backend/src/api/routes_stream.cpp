@@ -148,7 +148,15 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                         "ORDER BY started_at",
                         start, end);
                     std::vector<std::string> out;
-                    for (const auto& row : r) out.push_back(row["file_path"].as<std::string>());
+                    for (const auto& row : r) {
+                        // пропускаем записи, чьи файлы уже удалены с диска —
+                        // иначе ffmpeg упадёт на первом же отсутствующем сегменте
+                        const auto p = std::string(row["file_path"].as<std::string>());
+                        if (std::filesystem::exists(std::filesystem::path(recordings_path) / p))
+                            out.push_back(p);
+                        else
+                            spdlog::warn("archive: файл сегмента отсутствует на диске, пропускаем: {}", p);
+                    }
                     const auto d = w.exec_params(
                         "SELECT GREATEST(1, LEAST(86400, "
                         "EXTRACT(EPOCH FROM ($2::timestamptz - $1::timestamptz))::int))",

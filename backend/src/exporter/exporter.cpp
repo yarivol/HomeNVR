@@ -104,7 +104,15 @@ void Exporter::process(long long id, const std::string& start_iso, const std::st
                     "ORDER BY started_at",
                     start_iso, end_iso);
                 std::vector<std::string> out;
-                for (const auto& row : r) out.push_back(row["file_path"].as<std::string>());
+                for (const auto& row : r) {
+                    // пропускаем отсутствующие на диске файлы — один потерянный
+                    // сегмент не должен валить весь экспорт
+                    const auto p = std::string(row["file_path"].as<std::string>());
+                    if (fs::exists(fs::path(recordings_path_) / p))
+                        out.push_back(p);
+                    else
+                        spdlog::warn("export: файл сегмента отсутствует на диске, пропускаем: {}", p);
+                }
                 const auto d = w.exec_params(
                     "SELECT GREATEST(1, LEAST(86400, "
                     "EXTRACT(EPOCH FROM ($2::timestamptz - $1::timestamptz))::int))",
