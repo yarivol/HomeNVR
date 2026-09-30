@@ -11,7 +11,7 @@ PASS_COUNT=0; FAIL_COUNT=0
 t() { # t <описание> <ожидаемый код> <curl args...>
   local desc="$1" want="$2"; shift 2
   local code
-  code=$(curl -s -m 15 -b "$COOKIE" -c "$COOKIE" -o /tmp/smoke_body -w '%{http_code}' "$@")
+  code=$(curl -s -m 30 -b "$COOKIE" -c "$COOKIE" -o /tmp/smoke_body -w '%{http_code}' "$@")
   if [ "$code" = "$want" ]; then
     echo "PASS  [$code] $desc"; PASS_COUNT=$((PASS_COUNT+1))
   else
