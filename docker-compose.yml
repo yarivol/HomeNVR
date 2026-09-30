@@ -43,6 +43,7 @@ services:
       autoheal: "true"
     logging: *default-logging
     restart: unless-stopped
+    mem_limit: 350m
 
   backend:
     build: ./backend
@@ -71,12 +72,19 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
-      timeout: 5s
-      retries: 3
+      timeout: 10s
+      retries: 5
+      # VM под нагрузкой загрузки: даём backend время прогреться,
+      # иначе autoheal рестартит здоровый контейнер по ложному unhealthy
+      start_period: 90s
     labels:
       autoheal: "true"
     logging: *default-logging
     restart: unless-stopped
+    # лимиты памяти: VM с 2 ГБ — разбушевавшийся процесс не должен
+    # уронить всю виртуалку (OOM-kill контейнера + restart лучше фриза VM)
+    mem_limit: 900m
+    mem_reservation: 256m
 
   postgres:
     image: postgres:16-alpine
@@ -96,6 +104,7 @@ services:
       autoheal: "true"
     logging: *default-logging
     restart: unless-stopped
+    mem_limit: 400m
 
   # Recovery (ТЗ §55, Phase 7): перезапускает контейнеры, ставшие unhealthy
   # (например, при дедлоке/зависании backend — healthcheck падает, autoheal решает)
