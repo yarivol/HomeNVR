@@ -43,7 +43,9 @@ if [ -n "$PASS" ]; then
   t "GET /api/storage"          200 "$BASE/api/storage"
 
   echo "=== записи и live ==="
-  TODAY=$(date +%F)
+  # backend и frontend оперируют датами в UTC — smoke тоже (иначе тест
+  # ломается в 00:00–03:00 местного времени, когда локальная дата ≠ UTC)
+  TODAY=$(date -u +%F)
   t "GET /api/recordings?date=today" 200 "$BASE/api/recordings?date=$TODAY"
   RECS=$(head -c 4000 /tmp/smoke_body)
   echo "$RECS" | grep -q '"id"' && echo "PASS  записи за сегодня есть" && PASS_COUNT=$((PASS_COUNT+1)) \
