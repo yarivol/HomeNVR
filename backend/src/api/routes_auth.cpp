@@ -111,7 +111,7 @@ void register_auth_routes(crow::SimpleApp& app, db::Database& db) {
         crow::json::wvalue res;
         res["ok"] = true;
         crow::response resp(200, res);
-        resp.add_header("Set-Cookie", auth::session_cookie(token, 7 * 24 * 3600));
+        resp.add_header("Set-Cookie", auth::session_cookie(token, auth::kSessionTtlSec));
         return resp;
     });
 

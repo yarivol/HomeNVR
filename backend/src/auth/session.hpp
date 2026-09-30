@@ -10,6 +10,10 @@
 
 namespace auth {
 
+// Время жизни сессии: 7 дней (ТЗ §73.8). Одно место — используется и для
+// expires_at в БД, и для Max-Age cookie.
+inline constexpr int kSessionTtlSec = 7 * 24 * 3600;
+
 struct AuthUser {
     int id;
     std::string username;

@@ -5,7 +5,7 @@
 namespace auth {
 
 namespace {
-constexpr int kSessionTtlSec = 7 * 24 * 3600;  // 7 дней (ТЗ §73.8)
+// kSessionTtlSec — в session.hpp (общий для БД и cookie)
 
 std::string extract_token(const crow::request& req) {
     const std::string cookie = req.get_header_value("Cookie");
