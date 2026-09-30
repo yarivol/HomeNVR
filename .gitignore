@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+build/
+dist/
+
+# Data volumes (никогда не коммитим данные и записи)
+data/
+
+# Secrets
+.env
+*.pem
+*.key
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+
+# Next.js
+.next/
+out/
+
+# C++ build
+backend/build/
+CMakeCache.txt
+CMakeFiles/
