@@ -11,11 +11,8 @@ export default function HlsPlayer({ src, live = false }: { src: string; live?: b
     const video = videoRef.current;
     if (!video) return;
 
-    if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = src;
-      video.play().catch(() => {});
-      return;
-    }
+    // Приоритет — hls.js (MSE): некоторые Chromium отвечают "maybe" на
+    // canPlayType(mpegurl), но нативно HLS не играют. Нативный — только fallback.
     if (Hls.isSupported()) {
       const hls = new Hls(
         live
@@ -26,6 +23,10 @@ export default function HlsPlayer({ src, live = false }: { src: string; live?: b
       hls.attachMedia(video);
       if (live) hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
       return () => hls.destroy();
+    }
+    if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = src;
+      video.play().catch(() => {});
     }
   }, [src, live]);
 
