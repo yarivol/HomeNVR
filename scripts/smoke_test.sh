@@ -91,6 +91,9 @@ if [ -n "$PASS" ]; then
 
   echo "=== admin ==="
   t "GET /api/admin/users"      200 "$BASE/api/admin/users"
+  t "GET /api/admin/logs"       200 "$BASE/api/admin/logs?lines=20"
+  grep -q '"lines"' /tmp/smoke_body && { echo "PASS  логи возвращают JSON со строками"; PASS_COUNT=$((PASS_COUNT+1)); } \
+    || { echo "FAIL  логи: нет поля lines"; FAIL_COUNT=$((FAIL_COUNT+1)); }
 fi
 
 rm -f "$COOKIE"
