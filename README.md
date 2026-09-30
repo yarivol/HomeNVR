@@ -77,10 +77,13 @@ myMediaCombain/
 ## Статус развёртывания
 
 Система **развёрнута и полностью протестирована** на Debian 13 (VirtualBox):
-smoke-тест 26/26 PASS — auth (argon2id, сессии, rate limit), RBAC (USER/ADMIN),
-камера (RTSP reconnect), запись сегментов с ротацией, live HLS, motion-события
-с thumbnails, архивный HLS, экспорт MP4, circular overwrite, autoheal
-(проверен SIGSTOP-тестом: unhealthy → автоперезапуск за ~90 с).
+smoke-тест 26/26 PASS — auth (argon2id, сессии, rate limit 429), RBAC (USER/ADMIN),
+камера (RTSP reconnect, вкл/выкл), запись сегментов с ротацией (continuous и
+по движению с pre-buffer), live HLS, motion-события с thumbnails и зонами,
+архивный HLS (включая активный сегмент и дыры от circular overwrite),
+экспорт MP4, circular overwrite (max_storage_usage + min_free_space),
+WS-realtime в UI, autoheal (SIGSTOP-тест: автоперезапуск за ~90 с), backup/restore.
+Soak: 0 ошибок backend за 30 мин под нагрузкой.
 
 Тестирование без реальной камеры: mediamtx + ffmpeg-издатели
 (`testsrc2`) в той же docker-сети, RTSP `rtsp://rtsp-test:8554/cam` (+`/cam_sub`).
