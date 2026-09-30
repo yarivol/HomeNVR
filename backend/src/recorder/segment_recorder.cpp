@@ -10,6 +10,7 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/dict.h>
+#include <libavutil/opt.h>
 #include <libavutil/timestamp.h>
 }
 
