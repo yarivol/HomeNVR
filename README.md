@@ -71,13 +71,13 @@ myMediaCombain/
 - [x] **Phase 3** — Recording: сегментная запись (stream copy, fMP4), circular overwrite, /api/storage, запись по движению (pre-buffer + cooldown) ✅ проверено
 - [x] **Phase 4** — Motion: OpenCV pipeline, зоны detect/ignore, события, thumbnails, /api/events ✅ код собран
 - [x] **Phase 5** — Web UI: setup wizard, login, live (hls.js), архив, события, скачивание ✅ UI рендерится
-- [x] **Phase 6** — Admin panel: камера, запись, motion, хранилище, пользователи, система ✅ код собран
+- [x] **Phase 6** — Admin panel: камера, запись, motion, хранилище, пользователи, система, логи ✅ код собран
 - [x] **Phase 7** — Hardening: health checks + autoheal (recovery), ротация логов (docker + spdlog), backup/restore скрипты ✅ (HTTPS — при привязке домена, ТЗ §73.6)
 
 ## Статус развёртывания
 
 Система **развёрнута и полностью протестирована** на Debian 13 (VirtualBox):
-smoke-тест 26/26 PASS — auth (argon2id, сессии, rate limit 429), RBAC (USER/ADMIN),
+smoke-тест 28/28 PASS — auth (argon2id, сессии, rate limit 429), RBAC (USER/ADMIN),
 камера (RTSP reconnect, вкл/выкл), запись сегментов с ротацией (continuous и
 по движению с pre-buffer), live HLS, motion-события с thumbnails и зонами,
 архивный HLS (включая активный сегмент и дыры от circular overwrite),
