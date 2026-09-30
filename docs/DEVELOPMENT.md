@@ -45,7 +45,18 @@ docker compose logs -f backend      # логи backend
 docker compose ps                   # статус контейнеров
 docker compose down                 # остановить
 docker compose up -d --build backend  # пересобрать только backend
+docker compose restart nginx        # применить изменения nginx.conf
 ```
+
+## Troubleshooting (опыт первого развёртывания)
+
+| Проблема | Причина | Решение |
+|---|---|---|
+| Пустая страница в браузере | CSP `script-src 'self'` блокирует inline-скрипты Next.js | `'unsafe-inline'` в script-src (уже исправлено) |
+| `/health` отдаёт 404 от frontend | nginx не имел маршрута /health | добавлен `location = /health` |
+| Internal compiler error при сборке | Мало RAM в VM при `-j$(nproc)` | сборка с `-j2` |
+| Изменения nginx.conf не действуют | Конфиг смонтирован в контейнер, но nginx его не перечитал | `docker compose restart nginx` |
+| В Debian 13 нет пакета `docker-compose-v2` | В репозитории Debian он называется `docker-compose` (это v2) | `apt install docker-compose` |
 
 ## После перезагрузки сервера
 

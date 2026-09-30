@@ -65,13 +65,20 @@ myMediaCombain/
 
 ## Этапы разработки (roadmap)
 
-- [x] **Phase 1** — Infrastructure: Docker Compose, PostgreSQL, Nginx, Next.js, C++ backend skeleton ✅ (код готов, проверка запуска — на Debian)
-- [~] **Phase 2** — Camera: ONVIF, RTSP, reconnect, статус + auth (argon2, сессии, rate limit) + setup wizard ✅ (код готов, не тестирован)
-- [~] **Phase 3** — Recording: сегментная запись (stream copy, fMP4), circular overwrite, /api/storage ✅ (код готов, не тестирован)
-- [~] **Phase 4** — Motion: OpenCV pipeline, зоны detect/ignore, события, thumbnails, /api/events ✅ (код готов, не тестирован)
-- [~] **Phase 5** — Web UI: setup wizard, login, live (hls.js), архив, события, скачивание ✅ (код готов, не тестирован)
-- [~] **Phase 6** — Admin panel: камера, запись, motion, хранилище, пользователи, система ✅ (код готов, не тестирован)
+- [x] **Phase 1** — Infrastructure ✅ проверено на Debian 13
+- [x] **Phase 2** — Camera (ONVIF/RTSP/reconnect) + auth (argon2id, сессии, rate limit) + setup wizard ✅ API проверено
+- [x] **Phase 3** — Recording: сегментная запись (stream copy, fMP4), circular overwrite, /api/storage ✅ код собран
+- [x] **Phase 4** — Motion: OpenCV pipeline, зоны detect/ignore, события, thumbnails, /api/events ✅ код собран
+- [x] **Phase 5** — Web UI: setup wizard, login, live (hls.js), архив, события, скачивание ✅ UI рендерится
+- [x] **Phase 6** — Admin panel: камера, запись, motion, хранилище, пользователи, система ✅ код собран
 - [ ] **Phase 7** — Hardening: HTTPS, health checks, recovery
+
+## Статус развёртывания
+
+Система **развёрнута и работает** на Debian 13 (VirtualBox): все контейнеры healthy,
+миграции применены, авторизация и защита API проверены (401/403 работают).
+
+⏳ Осталось проверить с реальной камерой: ONVIF, RTSP-запись, live, motion.
 
 ## Запуск
 

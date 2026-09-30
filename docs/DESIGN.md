@@ -169,6 +169,9 @@ volumes:     # ./data/postgres, ./data/recordings, ./data/config
 - [x] проверка роли на каждом защищённом endpoint (require_user / require_admin)
 - [x] setup wizard закрывается после создания первого админа (нет дефолтных паролей)
 - [x] nginx: server_tokens off, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, CSP
+  - ⚠️ `script-src` включает `'unsafe-inline'` — иначе не работает гидратация Next.js
+    App Router (inline-скрипты). Для LAN-приложения приемлемо; при переходе на HTTPS
+    стоит перейти на nonce-based CSP.
 - [x] параметризованные SQL-запросы (exec_params) — защита от SQL injection
 - [x] секреты не попадают в логи (RTSP URL никогда не логируется)
 - [x] авторизация download endpoints (X-Accel-Redirect: backend проверяет, nginx отдаёт)
