@@ -105,7 +105,8 @@ int main() {
 
     // Motion detection (Phase 4): предпочитаем суб-поток, fallback — основной (ТЗ §73.3)
     MotionDetector motion(db, cfg.thumbnails_path);
-    motion.set_event_callback([&ws_hub](const std::string& event, const std::string& payload) {
+    motion.set_event_callback([&ws_hub, &recorder](const std::string& event, const std::string& payload) {
+        recorder.on_motion_event(event);  // режим записи "по движению" (ТЗ §18)
         ws_hub.broadcast(event, payload);
     });
     motion.set_url_provider([&db, &key_hex]() -> std::string {
