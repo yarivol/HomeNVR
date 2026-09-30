@@ -7,6 +7,8 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
+#include <chrono>
+#include <cstdio>
 #include <filesystem>
 
 #include "api/routes.hpp"
@@ -35,8 +37,12 @@ int main() {
         auto logger = std::make_shared<spdlog::logger>(
             "homenvr", spdlog::sinks_init_list{console_sink, file_sink});
         spdlog::set_default_logger(logger);
+        // файловый sink буферизует запись — без периодического flush
+        // свежие строки не видны в файле (вкладка «Логи», отладка)
+        spdlog::flush_every(std::chrono::seconds(3));
     } catch (const std::exception& e) {
         // файловый sink недоступен — продолжаем с выводом в stdout
+        std::fprintf(stderr, "file log sink unavailable: %s\n", e.what());
     }
     // Уровень логов из LOG_LEVEL (debug/info/warn/error), по умолчанию info
     {
