@@ -1,6 +1,7 @@
 // HomeNVR backend — точка входа
 // Phase 1: инфраструктура (health, status, WS)
 // Phase 2: камера (ONVIF, RTSP, reconnect) + auth + setup wizard
+// Phase 3: запись (сегменты, stream copy) + хранилище (circular overwrite)
 #include <crow.h>
 #include <spdlog/spdlog.h>
 
@@ -9,6 +10,8 @@
 #include "common/config.hpp"
 #include "common/crypto.hpp"
 #include "db/database.hpp"
+#include "recorder/segment_recorder.hpp"
+#include "storage/storage_manager.hpp"
 #include "ws/ws_hub.hpp"
 
 int main() {
@@ -51,7 +54,7 @@ int main() {
     });
 
     // Провайдер основного RTSP URL из БД (расшифровка). URL никогда не логируем.
-    cam.set_url_provider([&db, &key_hex]() -> std::string {
+    auto main_rtsp_url = [&db, &key_hex]() -> std::string {
         return db.tx([&](pqxx::work& w) -> std::string {
             const auto r = w.exec(
                 "SELECT p.rtsp_url_encrypted "
@@ -60,8 +63,24 @@ int main() {
             if (r.empty()) return "";
             return crypto::decrypt(r[0]["rtsp_url_encrypted"].as<std::string>(), key_hex);
         });
-    });
+    };
+    cam.set_url_provider(main_rtsp_url);
     cam.start();
+
+    // Рекордер (Phase 3): пишет сегменты по 5 минут, stream copy
+    SegmentRecorder recorder(db, cfg.recordings_path);
+    recorder.set_event_callback([&ws_hub](const std::string& event, const std::string& payload) {
+        ws_hub.broadcast(event, payload);
+    });
+    recorder.set_url_provider(main_rtsp_url);
+    recorder.start();
+
+    // Хранилище (Phase 3): circular overwrite, предупреждения о заполнении
+    StorageManager storage(db, cfg.recordings_path);
+    storage.set_event_callback([&ws_hub](const std::string& event, const std::string& payload) {
+        ws_hub.broadcast(event, payload);
+    });
+    storage.start();
 
     crow::SimpleApp app;
 
@@ -73,15 +92,15 @@ int main() {
     });
 
     // Статус системы (ТЗ §50)
-    CROW_ROUTE(app, "/api/system/status")([&db, &cam](const crow::request& req) {
+    CROW_ROUTE(app, "/api/system/status")([&db, &cam, &recorder, &storage](const crow::request& req) {
         if (!auth::require_user(req, db)) return crow::response(401);
         crow::json::wvalue res;
         res["backend"] = "ok";
         res["database"] = "ok";
         res["camera"] = cam.state_str();
-        res["recording"] = "stopped";   // Phase 3
+        res["recording"] = recorder.state_str();
         res["motion"] = "disabled";     // Phase 4
-        res["storage_percent"] = 0;     // Phase 3
+        res["storage_percent"] = static_cast<int>(storage.stats().usage_percent * 100);
         return res;
     });
 
@@ -98,12 +117,15 @@ int main() {
 
     // API
     api::register_auth_routes(app, db);
-    api::register_setup_routes(app, db, key_hex, cam);
-    api::register_camera_routes(app, db, key_hex, cam);
+    api::register_setup_routes(app, db, key_hex, cam, recorder);
+    api::register_camera_routes(app, db, key_hex, cam, recorder);
+    api::register_storage_routes(app, db, storage);
 
     spdlog::info("listening on port {}", cfg.port);
     app.port(cfg.port).multithreaded().run();
 
+    recorder.stop();
+    storage.stop();
     cam.stop();
     return 0;
 }

@@ -6,6 +6,7 @@
 
 #include "../auth/password_hash.hpp"
 #include "../common/crypto.hpp"
+#include "../recorder/segment_recorder.hpp"
 
 namespace api {
 namespace {
@@ -25,7 +26,7 @@ bool has_users(db::Database& db) {
 }  // namespace
 
 void register_setup_routes(crow::SimpleApp& app, db::Database& db, const std::string& key_hex,
-                           CameraManager& cam) {
+                           CameraManager& cam, SegmentRecorder& recorder) {
     // GET /api/setup/status — нужен frontend'у, чтобы показать wizard
     CROW_ROUTE(app, "/api/setup/status")([&db] {
         crow::json::wvalue res;
@@ -35,7 +36,7 @@ void register_setup_routes(crow::SimpleApp& app, db::Database& db, const std::st
 
     // POST /api/setup {username, password, camera: {name, ip, onvif_port, username, password, rtsp_url, rtsp_sub_url}}
     CROW_ROUTE(app, "/api/setup").methods(crow::HTTPMethod::POST)(
-        [&db, &key_hex, &cam](const crow::request& req) {
+        [&db, &key_hex, &cam, &recorder](const crow::request& req) {
             if (has_users(db))
                 return json_error(403, "Setup already completed");
 
@@ -93,6 +94,7 @@ void register_setup_routes(crow::SimpleApp& app, db::Database& db, const std::st
 
             spdlog::info("setup completed, admin '{}' created", username);
             cam.reload();
+            recorder.reload();
 
             crow::json::wvalue res;
             res["ok"] = true;

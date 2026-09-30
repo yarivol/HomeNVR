@@ -44,10 +44,14 @@ backend/
 ├── db/migrations/    # SQL-миграции, применяются при старте
 └── src/
     ├── main.cpp          # точка входа, роутинг, сборка компонентов
-    ├── api/              # REST API: auth, setup wizard, camera (ТЗ §40)
+    ├── api/              # REST API: auth, setup wizard, camera, storage (ТЗ §40)
     ├── auth/             # argon2id хеширование, сессии (HttpOnly cookie), require_user/require_admin
     ├── camera/           # ONVIF-клиент (WS-Security), RTSP probe (libavformat),
     │                     # CameraManager: state machine + exponential backoff reconnect (ТЗ §57)
+    ├── recorder/         # SegmentRecorder: RTSP → MP4 сегменты 5 мин, stream copy,
+    │                     # ротация на кейфрейме, fMP4 (файл читаем даже при обрыве), metadata в БД
+    ├── storage/          # StorageManager: circular overwrite (ТЗ §20), statvfs,
+    │                     # удаление старейших сегментов до 85%, storage.warning/critical в WS
     ├── ws/               # WebSocket-хаб, broadcast событий (ТЗ §41)
     ├── db/               # libpqxx: подключение с retry, миграции, транзакции
     └── common/           # конфиг из env, AES-256-GCM для секретов камеры (ТЗ §39)
