@@ -62,6 +62,12 @@ export default function EventsPage() {
                 </div>
                 <div className="text-sm text-neutral-500">Обнаружено движение</div>
               </div>
+              <Link
+                href={`/archive?date=${date}&at=${encodeURIComponent(e.started_at)}`}
+                className="transition-soft ml-auto rounded-lg bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-700 active:scale-95"
+              >
+                Смотреть
+              </Link>
             </li>
           ))}
         </ul>

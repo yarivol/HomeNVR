@@ -5,7 +5,7 @@ import HlsPlayer from "@/components/HlsPlayer";
 import { apiJson } from "@/lib/api";
 import { useAuth } from "@/lib/useAuth";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Recording {
   id: number;
@@ -19,21 +19,47 @@ export default function ArchivePage() {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [playUrl, setPlayUrl] = useState("");
+  const [preparing, setPreparing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState("");
+  const autoplayRef = useRef(false);
 
   useEffect(() => {
     if (!user) return;
     setPlayUrl("");
+    // переход со страницы событий: /archive?date=YYYY-MM-DD&at=<ISO> —
+    // подсвечиваем дату и сразу играем сегмент с событием (ТЗ: переход к motion event)
+    const q = new URLSearchParams(window.location.search);
+    const qDate = q.get("date");
+    const qAt = q.get("at");
+    if (qAt) sessionStorage.setItem("archive_autoplay", qAt);
+    if (qDate && qDate !== date) {
+      setDate(qDate);
+      return;
+    }
     apiJson<{ recordings: Recording[] }>(`/api/recordings?date=${date}`)
-      .then((r) => setRecordings(r.recordings))
+      .then((r) => {
+        setRecordings(r.recordings);
+        const at = sessionStorage.getItem("archive_autoplay");
+        if (at && !autoplayRef.current) {
+          autoplayRef.current = true;
+          sessionStorage.removeItem("archive_autoplay");
+          const t = new Date(at).getTime();
+          const rec = r.recordings.find(
+            (x) => x.ended_at && new Date(x.started_at).getTime() <= t && t <= new Date(x.ended_at).getTime()
+          );
+          if (rec) play(rec);
+        }
+      })
       .catch(() => setRecordings([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, date]);
 
   if (loading || !user) return null;
 
   async function play(rec: Recording) {
     setMessage("");
+    setPreparing(true);
     try {
       // смотрим выбранный сегмент целиком (ТЗ §73.2 — HLS из сегментов)
       const res = await apiJson<{ url: string }>("/api/archive/session", {
@@ -43,6 +69,8 @@ export default function ArchivePage() {
       setPlayUrl(res.url);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Ошибка");
+    } finally {
+      setPreparing(false);
     }
   }
 
@@ -111,9 +139,10 @@ export default function ArchivePage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => play(r)}
-                  className="transition-soft rounded-lg bg-neutral-900 px-4 py-2 text-white hover:bg-neutral-700 active:scale-95 active:opacity-80"
+                  disabled={preparing}
+                  className="transition-soft rounded-lg bg-neutral-900 px-4 py-2 text-white hover:bg-neutral-700 active:scale-95 active:opacity-80 disabled:opacity-40"
                 >
-                  Смотреть
+                  {preparing ? "Подготовка…" : "Смотреть"}
                 </button>
                 <button
                   onClick={() => download(r)}
