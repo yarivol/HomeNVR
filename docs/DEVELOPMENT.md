@@ -64,6 +64,7 @@ docker compose restart nginx        # применить изменения ngin
 | Frontend в restart-loop от autoheal | Next standalone слушает на `$HOSTNAME` (id контейнера), healthcheck на 127.0.0.1 не проходил | `ENV HOSTNAME=0.0.0.0` в frontend Dockerfile |
 | nginx/frontend healthcheck fail | `localhost` резолвится в ::1, wget туда не ходит | healthcheck на `127.0.0.1` |
 | В режиме «по движению» запись не останавливается | reload детектора посреди активного события терял `motion.ended` | детектор завершает событие при закрытии сессии |
+| Архив/экспорт свежего (ещё пишущегося) сегмента — 404 или ffmpeg «не кончается» | SQL исключал активный сегмент; без `-t` ffmpeg читает растущий fMP4 до его закрытия | `COALESCE(ended_at, now())` в выборке + `-t <длительность>` в ffmpeg |
 
 ## Backup и восстановление (ТЗ §68, Phase 7)
 
