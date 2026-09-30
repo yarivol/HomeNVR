@@ -6,14 +6,15 @@
 #include <chrono>
 #include <filesystem>
 #include <optional>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
 namespace {
 constexpr int kCheckIntervalSec = 60;
 constexpr double kWarnThreshold = 0.8;
-// Гистерезис очистки: чистим до (max_storage_usage - 5%), а не до фиксированного
-// значения — иначе при max_usage < 0.85 очистка вообще не запустится.
+// Гистерезис очистки: чистим до (порог - 5%), а не до фиксированного
+// значения — иначе при пороге < 0.85 очистка вообще не запустится.
 constexpr double kCleanupHysteresis = 0.05;
 }  // namespace
 
@@ -77,8 +78,11 @@ StorageManager::Stats StorageManager::stats() {
 
 // Circular overwrite (ТЗ §20): удаляем старые сегменты, пока не освободим место.
 // Приоритет — непрерывность записи.
+// Триггер — ЛЮБОЕ из: usage >= max_storage_usage ИЛИ free < min_free_space (ТЗ §648).
 void StorageManager::enforce_limit(const Stats& s) {
     const double max_usage = setting_double("max_storage_usage", 0.9);
+    const double min_free = setting_double("min_free_space", 0.1);
+    const double threshold = std::min(max_usage, 1.0 - min_free);
 
     const auto overwrite_enabled = [&] {
         try {
@@ -91,13 +95,14 @@ void StorageManager::enforce_limit(const Stats& s) {
         }
     }();
 
-    if (!overwrite_enabled || s.usage_percent < max_usage) return;
+    if (!overwrite_enabled || s.usage_percent < threshold) return;
 
-    spdlog::warn("storage limit reached ({:.0f}%), deleting oldest segments", s.usage_percent * 100);
+    spdlog::warn("storage limit reached ({:.0f}%, threshold {:.0f}%), deleting oldest segments",
+                 s.usage_percent * 100, threshold * 100);
 
     int deleted = 0;
     double usage = s.usage_percent;
-    const double cleanup_target = max_usage - kCleanupHysteresis;
+    const double cleanup_target = threshold - kCleanupHysteresis;
     while (usage > cleanup_target && deleted < 1000) {
         // самый старый закрытый сегмент (текущий не трогаем: ended_at IS NOT NULL)
         auto oldest = db_.tx([](pqxx::work& w) -> std::optional<std::pair<long long, std::string>> {
