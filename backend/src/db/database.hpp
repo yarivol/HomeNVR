@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <type_traits>
 
 #include <pqxx/pqxx>
 
@@ -20,14 +21,20 @@ public:
     // Применяет *.sql из директории по порядку, каждый файл — один раз
     void run_migrations(const std::string& dir);
 
-    // Выполнить функцию внутри транзакции (потокобезопасно)
+    // Выполнить функцию внутри транзакции (потокобезопасно).
+    // Работает и с void-лямбдами, и с возвращающими значение.
     template <typename F>
     auto tx(F&& fn) -> decltype(fn(std::declval<pqxx::work&>())) {
         std::lock_guard lock(mutex_);
         pqxx::work w{*conn_};
-        auto result = fn(w);
-        w.commit();
-        return result;
+        if constexpr (std::is_void_v<decltype(fn(w))>) {
+            fn(w);
+            w.commit();
+        } else {
+            auto result = fn(w);
+            w.commit();
+            return result;
+        }
     }
 
 private:
