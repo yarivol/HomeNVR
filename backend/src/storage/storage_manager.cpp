@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <algorithm>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -18,8 +19,9 @@ constexpr double kWarnThreshold = 0.8;
 constexpr double kCleanupHysteresis = 0.05;
 }  // namespace
 
-StorageManager::StorageManager(db::Database& db, std::string recordings_path)
-    : db_(db), recordings_path_(std::move(recordings_path)) {}
+StorageManager::StorageManager(db::Database& db, std::string recordings_path, std::string thumbnails_path)
+    : db_(db), recordings_path_(std::move(recordings_path)),
+      thumbnails_path_(std::move(thumbnails_path)) {}
 
 void StorageManager::start() {
     if (running_.exchange(true)) return;
@@ -137,6 +139,38 @@ void StorageManager::enforce_limit(const Stats& s) {
                      deleted, usage * 100);
 }
 
+// Ретенция событий = ретенция архива: событие без видео бесполезно,
+// а его thumbnail на диске — мусор. Удаляем события старше самого старого
+// живого сегмента (MIN по записям; если записей нет — NULL и ничего не удалится).
+void StorageManager::cleanup_old_events() {
+    try {
+        const auto thumbs = db_.tx([](pqxx::work& w) {
+            const auto r = w.exec(
+                "DELETE FROM motion_events "
+                "WHERE started_at < (SELECT MIN(started_at) FROM recordings) "
+                "RETURNING thumbnail_path");
+            std::vector<std::string> out;
+            for (const auto& row : r)
+                if (!row["thumbnail_path"].is_null())
+                    out.push_back(row["thumbnail_path"].as<std::string>());
+            return out;
+        });
+        int removed = 0;
+        for (const auto& t : thumbs) {
+            // защита от path traversal на всякий случай (значения из БД)
+            if (t.find("..") != std::string::npos || t.find('/') != std::string::npos) continue;
+            std::error_code ec;
+            fs::remove(fs::path(thumbnails_path_) / t, ec);
+            if (!ec) ++removed;
+        }
+        if (!thumbs.empty())
+            spdlog::info("events cleanup: {} старых событий удалено ({} thumbnails с диска)",
+                         thumbs.size(), removed);
+    } catch (const std::exception& e) {
+        spdlog::error("events cleanup failed: {}", e.what());
+    }
+}
+
 void StorageManager::run() {
     while (running_) {
         const Stats s = collect();
@@ -157,6 +191,7 @@ void StorageManager::run() {
         }
 
         enforce_limit(s);
+        cleanup_old_events();
 
         for (int i = 0; i < kCheckIntervalSec * 10 && running_; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));

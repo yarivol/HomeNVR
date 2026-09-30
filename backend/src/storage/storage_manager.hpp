@@ -23,7 +23,7 @@ public:
         std::string newest_recording;
     };
 
-    StorageManager(db::Database& db, std::string recordings_path);
+    StorageManager(db::Database& db, std::string recordings_path, std::string thumbnails_path);
 
     void set_event_callback(EventFn fn) { event_fn_ = std::move(fn); }
     void start();
@@ -36,9 +36,13 @@ private:
     Stats collect();
     double setting_double(const char* key, double fallback);
     void enforce_limit(const Stats& s);
+    // удаляет события движения старше самого старого сегмента + их thumbnails
+    // (иначе motion_events и JPEG-файлы копятся бесконечно)
+    void cleanup_old_events();
 
     db::Database& db_;
     std::string recordings_path_;
+    std::string thumbnails_path_;
 
     EventFn event_fn_;
     std::atomic<bool> running_{false};

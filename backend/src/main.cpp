@@ -110,8 +110,9 @@ int main() {
     recorder.set_url_provider(main_rtsp_url);
     recorder.start();
 
-    // Хранилище (Phase 3): circular overwrite, предупреждения о заполнении
-    StorageManager storage(db, cfg.recordings_path);
+    // Хранилище (Phase 3): circular overwrite, предупреждения о заполнении,
+    // чистка событий/thumbnails старше архива
+    StorageManager storage(db, cfg.recordings_path, cfg.thumbnails_path);
     storage.set_event_callback([&ws_hub](const std::string& event, const std::string& payload) {
         ws_hub.broadcast(event, payload);
     });
