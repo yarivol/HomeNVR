@@ -7,6 +7,7 @@
 #include "../auth/password_hash.hpp"
 #include "../auth/session.hpp"
 #include "../motion/motion_detector.hpp"
+#include "../recorder/segment_recorder.hpp"
 
 namespace api {
 namespace {

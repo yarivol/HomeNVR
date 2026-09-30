@@ -20,8 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY . .
 
+# -j2: на слабых VM параллельная сборка C++ падает от нехватки RAM (ICE)
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build build -j"$(nproc)"
+    && cmake --build build -j2
 
 # --- Запуск ---
 FROM debian:13

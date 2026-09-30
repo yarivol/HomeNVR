@@ -33,7 +33,7 @@ void register_events_routes(crow::SimpleApp& app, db::Database& db,
                     // строгая валидация формата даты
                     const std::string d = date;
                     if (d.size() != 10 || d[4] != '-' || d[7] != '-')
-                        return pqxx::result{};
+                        return crow::response(400, "invalid date format");
                     r = w.exec_params(
                         "SELECT id, started_at::text, ended_at::text, motion_score, thumbnail_path "
                         "FROM motion_events WHERE camera_id=1 AND started_at::date = $1::date "

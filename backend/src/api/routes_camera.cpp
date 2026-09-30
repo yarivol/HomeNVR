@@ -189,8 +189,9 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
 
             // 2. RTSP: пробуем поток, если URL передан
             if (body.has("rtsp_url") && !std::string(body["rtsp_url"].s()).empty()) {
-                res["rtsp"]["ok"] = rtsp::probe(body["rtsp_url"].s());
-                if (!static_cast<bool>(res["rtsp"]["ok"]))
+                const bool rtsp_ok = rtsp::probe(body["rtsp_url"].s());
+                res["rtsp"]["ok"] = rtsp_ok;
+                if (!rtsp_ok)
                     res["rtsp"]["error"] = "Не удалось подключиться к потоку";
             }
 
