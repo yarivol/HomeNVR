@@ -23,6 +23,20 @@ struct LoginAttempts {
 std::mutex g_limiter_mutex;
 std::unordered_map<std::string, LoginAttempts> g_attempts;
 
+// чистим протухшие записи, чтобы карта не росла бесконечно
+// (злопыхатель мог бы спамить неудачными логинами с разных поддельных IP)
+void purge_expired() {
+    // вызывается под g_limiter_mutex
+    if (g_attempts.size() < 1000) return;
+    const auto now = std::chrono::steady_clock::now();
+    for (auto it = g_attempts.begin(); it != g_attempts.end();) {
+        if (now >= it->second.locked_until)
+            it = g_attempts.erase(it);
+        else
+            ++it;
+    }
+}
+
 bool is_locked(const std::string& ip) {
     std::lock_guard lock(g_limiter_mutex);
     auto it = g_attempts.find(ip);
@@ -32,6 +46,7 @@ bool is_locked(const std::string& ip) {
 
 void register_fail(const std::string& ip) {
     std::lock_guard lock(g_limiter_mutex);
+    purge_expired();
     auto& a = g_attempts[ip];
     if (++a.fails >= 5) {
         a.fails = 0;

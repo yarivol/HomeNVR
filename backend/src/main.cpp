@@ -172,8 +172,12 @@ int main() {
         return crow::response(200, res);
     });
 
-    // WebSocket (ТЗ §41)
+    // WebSocket (ТЗ §41) — только для авторизованных (сессионная cookie
+    // уходит с handshake автоматически); без сессии соединение отклоняем
     CROW_WEBSOCKET_ROUTE(app, "/ws")
+        .onaccept([&db](const crow::request& req, void**) {
+            return auth::authenticate(req, db).has_value();
+        })
         .onopen([&ws_hub](crow::websocket::connection& conn) {
             ws_hub.add(&conn);
             spdlog::debug("ws client connected (total: {})", ws_hub.size());

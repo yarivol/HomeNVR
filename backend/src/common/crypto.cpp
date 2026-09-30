@@ -18,38 +18,37 @@ constexpr size_t kKeyLen = 32;  // AES-256
 void aes_gcm(bool encrypt_mode, const std::string& key, const unsigned char* iv,
              const unsigned char* in, size_t in_len, unsigned char* out,
              unsigned char* tag) {
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    // RAII: контекст освобождается даже при исключении из EVP_* вызовов
+    using EvpCtx = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
+    EvpCtx ctx(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
     if (!ctx) throw std::runtime_error("EVP_CIPHER_CTX_new failed");
 
     const EVP_CIPHER* cipher = EVP_aes_256_gcm();
     if (encrypt_mode) {
-        if (EVP_EncryptInit_ex(ctx, cipher, nullptr,
+        if (EVP_EncryptInit_ex(ctx.get(), cipher, nullptr,
                                reinterpret_cast<const unsigned char*>(key.data()), iv) != 1)
             throw std::runtime_error("EVP_EncryptInit_ex failed");
         int len = 0, total = 0;
-        if (EVP_EncryptUpdate(ctx, out, &len, in, static_cast<int>(in_len)) != 1)
+        if (EVP_EncryptUpdate(ctx.get(), out, &len, in, static_cast<int>(in_len)) != 1)
             throw std::runtime_error("EVP_EncryptUpdate failed");
         total = len;
-        if (EVP_EncryptFinal_ex(ctx, out + total, &len) != 1)
+        if (EVP_EncryptFinal_ex(ctx.get(), out + total, &len) != 1)
             throw std::runtime_error("EVP_EncryptFinal_ex failed");
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, kTagLen, tag) != 1)
+        if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG, kTagLen, tag) != 1)
             throw std::runtime_error("GCM get tag failed");
     } else {
-        if (EVP_DecryptInit_ex(ctx, cipher, nullptr,
+        if (EVP_DecryptInit_ex(ctx.get(), cipher, nullptr,
                                reinterpret_cast<const unsigned char*>(key.data()), iv) != 1)
             throw std::runtime_error("EVP_DecryptInit_ex failed");
         int len = 0, total = 0;
-        if (EVP_DecryptUpdate(ctx, out, &len, in, static_cast<int>(in_len)) != 1)
+        if (EVP_DecryptUpdate(ctx.get(), out, &len, in, static_cast<int>(in_len)) != 1)
             throw std::runtime_error("EVP_DecryptUpdate failed");
         total = len;
-        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, kTagLen, tag) != 1)
+        if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG, kTagLen, tag) != 1)
             throw std::runtime_error("GCM set tag failed");
-        if (EVP_DecryptFinal_ex(ctx, out + total, &len) != 1) {
-            EVP_CIPHER_CTX_free(ctx);
+        if (EVP_DecryptFinal_ex(ctx.get(), out + total, &len) != 1)
             throw std::runtime_error("GCM auth failed (wrong key or corrupted data)");
-        }
     }
-    EVP_CIPHER_CTX_free(ctx);
 }
 }  // namespace
 

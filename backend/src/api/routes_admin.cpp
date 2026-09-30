@@ -174,11 +174,22 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             if (body.has("enabled") && !static_cast<bool>(body["enabled"].b()) && admin->id == id)
                 return json_error(400, "Нельзя отключить самого себя");
 
+            // argon2-хеширование медленное (by design) — считаем ДО транзакции,
+            // чтобы не держать блокировку БД сотни миллисекунд
+            std::string new_hash;
+            if (body.has("password")) {
+                try {
+                    new_hash = auth::hash_password(body["password"].s());
+                } catch (const std::invalid_argument& e) {
+                    return json_error(400, e.what());
+                }
+            }
+
             try {
                 db.tx([&](pqxx::work& w) {
                     if (body.has("password")) {
                         w.exec_params("UPDATE users SET password_hash=$1, updated_at=now() WHERE id=$2",
-                                      auth::hash_password(body["password"].s()), id);
+                                      new_hash, id);
                         // сбрасываем сессии пользователя после смены пароля
                         w.exec_params("DELETE FROM sessions WHERE user_id=$1", id);
                     }

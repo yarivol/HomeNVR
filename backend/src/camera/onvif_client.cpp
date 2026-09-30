@@ -279,7 +279,9 @@ std::string OnvifClient::build_envelope(const std::string& body) const {
 
     char created[32];
     const std::time_t now = std::time(nullptr);
-    std::strftime(created, sizeof(created), "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
+    // gmtime_r — потокобезопасно (OnvifClient создаётся per-request в потоках Crow)
+    std::tm tm_buf{};
+    std::strftime(created, sizeof(created), "%Y-%m-%dT%H:%M:%SZ", gmtime_r(&now, &tm_buf));
 
     std::string digest_input;
     digest_input.append(reinterpret_cast<char*>(nonce), sizeof(nonce));
