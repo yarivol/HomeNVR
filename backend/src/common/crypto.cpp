@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <cstring>
+#include <memory>
 #include <stdexcept>
 #include <vector>
 
