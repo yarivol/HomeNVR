@@ -364,6 +364,24 @@ bool MotionDetector::detection_session(const std::string& url) {
         }
     }
 
+    // Сессия прервана (reload настроек / обрыв потока) при активном событии —
+    // завершаем его штатно, иначе recorder в режиме "по движению" останется
+    // в записи навсегда (motion.ended не дойдёт).
+    if (in_event) {
+        std::string thumb_file;
+        const std::string name =
+            "event_" +
+            std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) +
+            ".jpg";
+        if (cv::imwrite((fs::path(thumbnails_path_) / name).generic_string(), best_frame,
+                        {cv::IMWRITE_JPEG_QUALITY, 70}))
+            thumb_file = name;
+        save_event(event_max_score, thumb_file);
+        if (event_fn_)
+            event_fn_("motion.ended", "{\"score\":" + std::to_string(event_max_score) + "}");
+        spdlog::info("motion ended by session close, max score {:.3f}", event_max_score);
+    }
+
     av_packet_free(&pkt);
     av_frame_free(&frame);
     sws_freeContext(sws);
