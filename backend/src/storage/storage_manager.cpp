@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <optional>
 
 namespace fs = std::filesystem;
 

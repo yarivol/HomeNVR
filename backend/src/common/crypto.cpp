@@ -4,6 +4,7 @@
 #include <openssl/rand.h>
 
 #include <fstream>
+#include <cstring>
 #include <stdexcept>
 #include <vector>
 

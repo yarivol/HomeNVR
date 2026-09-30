@@ -7,6 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <cstring>
 #include <ctime>
 
 #include "../common/crypto.hpp"

@@ -3,6 +3,7 @@
 #include <argon2.h>
 #include <openssl/rand.h>
 
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 

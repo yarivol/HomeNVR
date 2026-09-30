@@ -2,6 +2,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+
 #include "rtsp_probe.hpp"
 
 namespace {
