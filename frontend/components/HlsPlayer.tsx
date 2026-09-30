@@ -22,6 +22,14 @@ export default function HlsPlayer({ src, live = false }: { src: string; live?: b
       hls.loadSource(src);
       hls.attachMedia(video);
       if (live) hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+      // Автовосстановление после фатальных ошибок (ТЗ §57: камера может
+      // отваливаться и возвращаться — плеер не должен требовать F5)
+      hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (!data.fatal) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+        // остальное (например, mux/демукс) — не лечится, остаётся чёрный экран
+      });
       return () => hls.destroy();
     }
     if (video.canPlayType("application/vnd.apple.mpegurl")) {
