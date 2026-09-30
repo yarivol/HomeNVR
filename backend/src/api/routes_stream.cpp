@@ -139,8 +139,9 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                 segments = db.tx([&](pqxx::work& w) {
                     const auto r = w.exec_params(
                         "SELECT file_path FROM recordings "
-                        "WHERE camera_id=1 AND ended_at IS NOT NULL "
-                        "  AND started_at < $2::timestamptz AND ended_at > $1::timestamptz "
+                        "WHERE camera_id=1 "
+                        "  AND started_at < $2::timestamptz "
+                        "  AND COALESCE(ended_at, now()) > $1::timestamptz "
                         "ORDER BY started_at",
                         start, end);
                     std::vector<std::string> out;

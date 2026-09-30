@@ -81,13 +81,14 @@ void Exporter::process(long long id, const std::string& start_iso, const std::st
     try {
         set_status("PROCESSING");
 
-        // 1. Находим сегменты, пересекающие диапазон (ТЗ §16)
+        // 1. Находим сегменты, пересекающие диапазон (ТЗ §16);
+        //    активный (ещё пишущийся) сегмент тоже включаем — fMP4 читаем на лету
         const auto segments = db_.tx([&](pqxx::work& w) {
             const auto r = w.exec_params(
                 "SELECT file_path FROM recordings "
-                "WHERE camera_id=1 AND ended_at IS NOT NULL "
+                "WHERE camera_id=1 "
                 "  AND started_at < $2::timestamptz "
-                "  AND ended_at > $1::timestamptz "
+                "  AND COALESCE(ended_at, now()) > $1::timestamptz "
                 "ORDER BY started_at",
                 start_iso, end_iso);
             std::vector<std::string> out;
