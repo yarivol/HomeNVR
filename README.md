@@ -75,10 +75,16 @@ myMediaCombain/
 
 ## Статус развёртывания
 
-Система **развёрнута и работает** на Debian 13 (VirtualBox): все контейнеры healthy,
-миграции применены, авторизация и защита API проверены (401/403 работают).
+Система **развёрнута и полностью протестирована** на Debian 13 (VirtualBox):
+smoke-тест 26/26 PASS — auth (argon2id, сессии, rate limit), RBAC (USER/ADMIN),
+камера (RTSP reconnect), запись сегментов с ротацией, live HLS, motion-события
+с thumbnails, архивный HLS, экспорт MP4, circular overwrite, autoheal
+(проверен SIGSTOP-тестом: unhealthy → автоперезапуск за ~90 с).
 
-⏳ Осталось проверить с реальной камерой: ONVIF, RTSP-запись, live, motion.
+Тестирование без реальной камеры: mediamtx + ffmpeg-издатели
+(`testsrc2`) в той же docker-сети, RTSP `rtsp://rtsp-test:8554/cam` (+`/cam_sub`).
+
+⏳ Осталось проверить с реальной камерой: ONVIF-автообнаружение профилей.
 
 ## Запуск
 

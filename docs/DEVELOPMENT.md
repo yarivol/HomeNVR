@@ -58,7 +58,9 @@ docker compose restart nginx        # применить изменения ngin
 | Изменения nginx.conf не действуют | Конфиг смонтирован в контейнер, но nginx его не перечитал | `docker compose restart nginx` |
 | В Debian 13 нет пакета `docker-compose-v2` | В репозитории Debian он называется `docker-compose` (это v2) | `apt install docker-compose` |
 | **Весь backend завис (все потоки)** | Вложенный `db.tx()`: `MotionDetector::save_event` вызывал `min_event_sec()` внутри лямбды транзакции → самодедлок на `Database::mutex_` | исправлено; добавлена защита: вложенный `tx()` бросает исключение вместо зависания; диагностика: `gdb -p 1 -batch -ex 'thread apply all bt'` в контейнере |
-| VM не отвечает во время `docker compose build` | Компиляция C++ + работающие контейнеры съедают всю RAM → swap thrash | добавить swap-файл на VM; не собирать под нагрузкой; `-j2` |
+| VM не отвечает во время `docker compose build` | Компиляция C++ + работающие контейнеры съедают всю RAM → swap thrash | swap-файл/раздел; не собирать под нагрузкой; `-j2` |
+| Видео не играет в Chromium (readyState 0) | `canPlayType('application/vnd.apple.mpegurl')` отвечает "maybe", но нативно HLS не играет | HlsPlayer: приоритет hls.js (MSE), нативный — только fallback |
+| Circular overwrite не удаляет сегменты | Цель очистки была фиксированная 85% — при лимите <85% цикл не запускался | гистерезис: чистим до `max_storage_usage - 5%` |
 
 ## Backup и восстановление (ТЗ §68, Phase 7)
 
