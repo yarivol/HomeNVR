@@ -50,6 +50,9 @@ backend/
     │                     # CameraManager: state machine + exponential backoff reconnect (ТЗ §57)
     ├── recorder/         # SegmentRecorder: RTSP → MP4 сегменты 5 мин, stream copy,
     │                     # ротация на кейфрейме, fMP4 (файл читаем даже при обрыве), metadata в БД
+    ├── motion/           # MotionDetector: OpenCV pipeline (ТЗ §21) на суб-потоке,
+    │                     # зоны detect/ignore (ТЗ §23), cooldown + min duration (ТЗ §22),
+    │                     # thumbnails JPEG (ТЗ §26), события в motion_events (ТЗ §24)
     ├── storage/          # StorageManager: circular overwrite (ТЗ §20), statvfs,
     │                     # удаление старейших сегментов до 85%, storage.warning/critical в WS
     ├── ws/               # WebSocket-хаб, broadcast событий (ТЗ §41)

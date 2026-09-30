@@ -68,7 +68,7 @@ myMediaCombain/
 - [x] **Phase 1** — Infrastructure: Docker Compose, PostgreSQL, Nginx, Next.js, C++ backend skeleton ✅ (код готов, проверка запуска — на Debian)
 - [~] **Phase 2** — Camera: ONVIF, RTSP, reconnect, статус + auth (argon2, сессии, rate limit) + setup wizard ✅ (код готов, не тестирован)
 - [~] **Phase 3** — Recording: сегментная запись (stream copy, fMP4), circular overwrite, /api/storage ✅ (код готов, не тестирован)
-- [ ] **Phase 4** — Motion: OpenCV detection, зоны, события, thumbnails
+- [~] **Phase 4** — Motion: OpenCV pipeline, зоны detect/ignore, события, thumbnails, /api/events ✅ (код готов, не тестирован)
 - [ ] **Phase 5** — Web UI: login, live, архив, события, скачивание
 - [ ] **Phase 6** — Admin panel: все разделы настроек
 - [ ] **Phase 7** — Hardening: HTTPS, health checks, recovery

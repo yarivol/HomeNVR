@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev \
     libpugixml-dev \
     libavformat-dev libavcodec-dev libavutil-dev \
+    libswscale-dev \
+    libopencv-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -29,7 +31,8 @@ FROM debian:13
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpqxx-dev libspdlog-dev libargon2-dev \
     libssl-dev libcurl4-openssl-dev libpugixml-dev \
-    libavformat-dev libavcodec-dev libavutil-dev \
+    libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
+    libopencv-dev \
     ffmpeg \
     curl \
     && rm -rf /var/lib/apt/lists/*

@@ -17,5 +17,7 @@ void register_setup_routes(crow::SimpleApp& app, db::Database& db, const std::st
 void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::string& key_hex,
                             CameraManager& cam, SegmentRecorder& recorder);
 void register_storage_routes(crow::SimpleApp& app, db::Database& db, StorageManager& storage);
+void register_events_routes(crow::SimpleApp& app, db::Database& db,
+                            const std::string& thumbnails_path);
 
 }  // namespace api

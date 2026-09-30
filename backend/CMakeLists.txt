@@ -24,7 +24,9 @@ find_library(ARGON2_LIB argon2 REQUIRED)
 pkg_check_modules(AVFORMAT REQUIRED IMPORTED_TARGET libavformat)
 pkg_check_modules(AVCODEC  REQUIRED IMPORTED_TARGET libavcodec)
 pkg_check_modules(AVUTIL   REQUIRED IMPORTED_TARGET libavutil)
+pkg_check_modules(SWSCALE  REQUIRED IMPORTED_TARGET libswscale)
 pkg_check_modules(PUGIXML  REQUIRED IMPORTED_TARGET pugixml)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
 
 # Crow — header-only, через FetchContent (нужен standalone asio из apt)
 find_path(ASIO_INCLUDE_DIR asio.hpp REQUIRED)
@@ -60,7 +62,9 @@ target_link_libraries(homenvr-backend PRIVATE
     PkgConfig::AVFORMAT
     PkgConfig::AVCODEC
     PkgConfig::AVUTIL
+    PkgConfig::SWSCALE
     PkgConfig::PUGIXML
+    ${OpenCV_LIBS}
     ${PQXX_LIB}
     ${ARGON2_LIB}
     ${PostgreSQL_LIBRARIES}

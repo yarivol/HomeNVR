@@ -11,6 +11,7 @@
 #include "common/crypto.hpp"
 #include "db/database.hpp"
 #include "recorder/segment_recorder.hpp"
+#include "motion/motion_detector.hpp"
 #include "storage/storage_manager.hpp"
 #include "ws/ws_hub.hpp"
 
@@ -82,6 +83,24 @@ int main() {
     });
     storage.start();
 
+    // Motion detection (Phase 4): предпочитаем суб-поток, fallback — основной (ТЗ §73.3)
+    MotionDetector motion(db, cfg.thumbnails_path);
+    motion.set_event_callback([&ws_hub](const std::string& event, const std::string& payload) {
+        ws_hub.broadcast(event, payload);
+    });
+    motion.set_url_provider([&db, &key_hex]() -> std::string {
+        return db.tx([&](pqxx::work& w) -> std::string {
+            const auto r = w.exec(
+                "SELECT p.rtsp_url_encrypted FROM camera c "
+                "JOIN camera_profiles p ON p.camera_id = c.id "
+                "WHERE c.id = 1 AND c.enabled "
+                "ORDER BY p.is_substream DESC LIMIT 1");  // сначала суб-поток
+            if (r.empty()) return "";
+            return crypto::decrypt(r[0]["rtsp_url_encrypted"].as<std::string>(), key_hex);
+        });
+    });
+    motion.start();
+
     crow::SimpleApp app;
 
     // Health check (ТЗ §59) — без авторизации, для Docker
@@ -92,14 +111,14 @@ int main() {
     });
 
     // Статус системы (ТЗ §50)
-    CROW_ROUTE(app, "/api/system/status")([&db, &cam, &recorder, &storage](const crow::request& req) {
+    CROW_ROUTE(app, "/api/system/status")([&db, &cam, &recorder, &storage, &motion](const crow::request& req) {
         if (!auth::require_user(req, db)) return crow::response(401);
         crow::json::wvalue res;
         res["backend"] = "ok";
         res["database"] = "ok";
         res["camera"] = cam.state_str();
         res["recording"] = recorder.state_str();
-        res["motion"] = "disabled";     // Phase 4
+        res["motion"] = motion.enabled() ? "enabled" : "disabled";
         res["storage_percent"] = static_cast<int>(storage.stats().usage_percent * 100);
         return res;
     });
@@ -120,10 +139,12 @@ int main() {
     api::register_setup_routes(app, db, key_hex, cam, recorder);
     api::register_camera_routes(app, db, key_hex, cam, recorder);
     api::register_storage_routes(app, db, storage);
+    api::register_events_routes(app, db, cfg.thumbnails_path);
 
     spdlog::info("listening on port {}", cfg.port);
     app.port(cfg.port).multithreaded().run();
 
+    motion.stop();
     recorder.stop();
     storage.stop();
     cam.stop();
