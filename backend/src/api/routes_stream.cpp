@@ -126,13 +126,7 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
             const std::string start = body["start"].s();
             const std::string end = body["end"].s();
 
-            // чистим старые HLS-сессии (старше 2 часов)
-            try {
-                const auto now = std::filesystem::file_time_type::clock::now();
-                for (const auto& entry : std::filesystem::directory_iterator(hls_path))
-                    if (now - entry.last_write_time() > std::chrono::hours(2))
-                        std::filesystem::remove_all(entry.path());
-            } catch (...) {}
+            // устаревшие HLS-сессии чистит StorageManager (каждый цикл, TTL 2 часа)
 
             // сегменты диапазона + его длительность (для -t: активный сегмент
             // растёт на лету, без лимита ffmpeg читал бы его до закрытия)

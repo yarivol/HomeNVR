@@ -111,8 +111,8 @@ int main() {
     recorder.start();
 
     // Хранилище (Phase 3): circular overwrite, предупреждения о заполнении,
-    // чистка событий/thumbnails старше архива
-    StorageManager storage(db, cfg.recordings_path, cfg.thumbnails_path);
+    // чистка событий/thumbnails старше архива и устаревших HLS-сессий
+    StorageManager storage(db, cfg.recordings_path, cfg.thumbnails_path, cfg.hls_path);
     storage.set_event_callback([&ws_hub](const std::string& event, const std::string& payload) {
         ws_hub.broadcast(event, payload);
     });

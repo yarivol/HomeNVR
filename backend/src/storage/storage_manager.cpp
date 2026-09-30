@@ -19,9 +19,10 @@ constexpr double kWarnThreshold = 0.8;
 constexpr double kCleanupHysteresis = 0.05;
 }  // namespace
 
-StorageManager::StorageManager(db::Database& db, std::string recordings_path, std::string thumbnails_path)
+StorageManager::StorageManager(db::Database& db, std::string recordings_path, std::string thumbnails_path,
+                               std::string hls_path)
     : db_(db), recordings_path_(std::move(recordings_path)),
-      thumbnails_path_(std::move(thumbnails_path)) {}
+      thumbnails_path_(std::move(thumbnails_path)), hls_path_(std::move(hls_path)) {}
 
 void StorageManager::start() {
     if (running_.exchange(true)) return;
@@ -171,6 +172,25 @@ void StorageManager::cleanup_old_events() {
     }
 }
 
+void StorageManager::cleanup_hls_sessions() {
+    try {
+        std::error_code ec;
+        if (!fs::exists(hls_path_, ec)) return;
+        const auto now = fs::file_time_type::clock::now();
+        int removed = 0;
+        for (const auto& entry : fs::directory_iterator(hls_path_, ec)) {
+            std::error_code ec2;
+            if (now - entry.last_write_time(ec2) > std::chrono::hours(2) && !ec2) {
+                fs::remove_all(entry.path(), ec2);
+                if (!ec2) ++removed;
+            }
+        }
+        if (removed > 0) spdlog::info("hls cleanup: {} устаревших сессий архива удалено", removed);
+    } catch (const std::exception& e) {
+        spdlog::error("hls cleanup failed: {}", e.what());
+    }
+}
+
 void StorageManager::run() {
     while (running_) {
         const Stats s = collect();
@@ -192,6 +212,7 @@ void StorageManager::run() {
 
         enforce_limit(s);
         cleanup_old_events();
+        cleanup_hls_sessions();
 
         for (int i = 0; i < kCheckIntervalSec * 10 && running_; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));

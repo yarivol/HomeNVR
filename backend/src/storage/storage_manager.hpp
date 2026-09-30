@@ -23,7 +23,8 @@ public:
         std::string newest_recording;
     };
 
-    StorageManager(db::Database& db, std::string recordings_path, std::string thumbnails_path);
+    StorageManager(db::Database& db, std::string recordings_path, std::string thumbnails_path,
+                   std::string hls_path);
 
     void set_event_callback(EventFn fn) { event_fn_ = std::move(fn); }
     void start();
@@ -39,10 +40,14 @@ private:
     // удаляет события движения старше самого старого сегмента + их thumbnails
     // (иначе motion_events и JPEG-файлы копятся бесконечно)
     void cleanup_old_events();
+    // удаляет HLS-сессии архива старше 2 часов (раньше чистились только при
+    // создании новой сессии — без новых сессий .ts-чанки лежали бы вечно)
+    void cleanup_hls_sessions();
 
     db::Database& db_;
     std::string recordings_path_;
     std::string thumbnails_path_;
+    std::string hls_path_;
 
     EventFn event_fn_;
     std::atomic<bool> running_{false};
