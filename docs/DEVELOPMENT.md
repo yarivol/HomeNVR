@@ -105,3 +105,7 @@ docker compose restart nginx        # применить изменения ngin
   `backend/**`: сборка backend-образа (`docker/build-push-action`, эквивалент
   `docker compose build backend`) с кэшем слоёв `type=gha` — повторные сборки
   занимают минуты вместо полной перекомпиляции. Падение сборки = красный пайплайн.
+- `.github/workflows/frontend-ci.yml` — на изменения `frontend/**`:
+  `npm ci` + `next build` (включает полную проверку типов TypeScript),
+  кэш npm. Зависимости фиксированы в `frontend/package-lock.json` —
+  его обязательно коммитим при обновлении пакетов (`npm install` локально).
