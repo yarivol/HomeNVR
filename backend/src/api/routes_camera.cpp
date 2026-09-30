@@ -215,15 +215,16 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
     // ---- Видео-настройки камеры через ONVIF (ТЗ §29, §45) ----
 
     // реквизиты камеры из БД (пароль расшифровывается только здесь, во frontend не уходит)
+    // nullopt = камера вообще не настроена (нет строки). Пустой ip — не ошибка:
+    // ONVIF просто недоступен, GET отвечает 200 {onvif:false} (graceful degradation).
     auto load_creds = [&db]() -> std::optional<std::tuple<std::string, int, std::string, std::string>> {
         try {
             return db.tx([](pqxx::work& w) -> std::optional<std::tuple<std::string, int, std::string, std::string>> {
                 const auto r = w.exec(
                     "SELECT ip_address, onvif_port, username, password_encrypted FROM camera LIMIT 1");
                 if (r.empty()) return std::nullopt;
-                const std::string ip = r[0]["ip_address"].as<std::string>();
-                if (ip.empty()) return std::nullopt;
-                return std::make_tuple(ip, r[0]["onvif_port"].as<int>(),
+                return std::make_tuple(r[0]["ip_address"].as<std::string>(),
+                                       r[0]["onvif_port"].as<int>(),
                                        r[0]["username"].as<std::string>(),
                                        r[0]["password_encrypted"].as<std::string>());
             });
@@ -241,6 +242,11 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
         if (!creds) return json_error(400, "Камера не настроена");
 
         const auto& [ip, port, user, pass_enc] = *creds;
+        if (ip.empty()) {
+            res["onvif"] = false;
+            res["error"] = "ONVIF недоступен — не задан IP-адрес камеры";
+            return crow::response(200, res);
+        }
         const std::string pass = pass_enc.empty() ? "" : crypto::decrypt(pass_enc, key_hex);
         OnvifClient onvif(ip, port, user, pass);
 
@@ -297,6 +303,8 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
             if (!creds) return json_error(400, "Камера не настроена");
 
             const auto& [ip, port, user, pass_enc] = *creds;
+            if (ip.empty())
+                return json_error(400, "ONVIF недоступен — не задан IP-адрес камеры");
             const std::string pass = pass_enc.empty() ? "" : crypto::decrypt(pass_enc, key_hex);
             OnvifClient onvif(ip, port, user, pass);
 
