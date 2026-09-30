@@ -45,8 +45,10 @@ export default function ArchivePage() {
           autoplayRef.current = true;
           sessionStorage.removeItem("archive_autoplay");
           const t = new Date(at).getTime();
-          const rec = r.recordings.find(
-            (x) => x.ended_at && new Date(x.started_at).getTime() <= t && t <= new Date(x.ended_at).getTime()
+          // ищем сегмент, содержащий момент события; если он ещё пишется
+          // (ended_at нет) — тоже подходит, проиграем до текущего момента
+          const rec = [...r.recordings].reverse().find(
+            (x) => new Date(x.started_at).getTime() <= t
           );
           if (rec) play(rec);
         }
@@ -61,10 +63,14 @@ export default function ArchivePage() {
     setMessage("");
     setPreparing(true);
     try {
-      // смотрим выбранный сегмент целиком (ТЗ §73.2 — HLS из сегментов)
+      // смотрим выбранный сегмент целиком (ТЗ §73.2 — HLS из сегментов);
+      // активный сегмент (ended_at нет) — до текущего момента
       const res = await apiJson<{ url: string }>("/api/archive/session", {
         method: "POST",
-        body: JSON.stringify({ start: rec.started_at, end: rec.ended_at }),
+        body: JSON.stringify({
+          start: rec.started_at,
+          end: rec.ended_at ?? new Date().toISOString(),
+        }),
       });
       setPlayUrl(res.url);
     } catch (err) {
@@ -80,7 +86,10 @@ export default function ArchivePage() {
     try {
       const task = await apiJson<{ id: number }>("/api/export", {
         method: "POST",
-        body: JSON.stringify({ start: rec.started_at, end: rec.ended_at }),
+        body: JSON.stringify({
+          start: rec.started_at,
+          end: rec.ended_at ?? new Date().toISOString(),
+        }),
       });
       // ждём готовности файла
       for (let i = 0; i < 60; i++) {
