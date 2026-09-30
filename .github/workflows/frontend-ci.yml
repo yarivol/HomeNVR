@@ -1,0 +1,39 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-ci.yml"
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # next build включает полную проверку типов TypeScript —
+      # ловит ошибки TS/импортов до попадания на сервер
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build (Next.js + type check)
+        working-directory: frontend
+        run: npm run build
+        # exit code != 0 -> шаг и весь пайплайн падают автоматически
