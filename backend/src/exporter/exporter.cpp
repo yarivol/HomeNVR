@@ -83,18 +83,28 @@ void Exporter::process(long long id, const std::string& start_iso, const std::st
 
         // 1. Находим сегменты, пересекающие диапазон (ТЗ §16);
         //    активный (ещё пишущийся) сегмент тоже включаем — fMP4 читаем на лету
-        const auto segments = db_.tx([&](pqxx::work& w) {
-            const auto r = w.exec_params(
-                "SELECT file_path FROM recordings "
-                "WHERE camera_id=1 "
-                "  AND started_at < $2::timestamptz "
-                "  AND COALESCE(ended_at, now()) > $1::timestamptz "
-                "ORDER BY started_at",
-                start_iso, end_iso);
-            std::vector<std::string> out;
-            for (const auto& row : r) out.push_back(row["file_path"].as<std::string>());
-            return out;
-        });
+        std::vector<std::string> segments;
+        int duration_sec = 0;
+        {
+            const auto res = db_.tx([&](pqxx::work& w) {
+                const auto r = w.exec_params(
+                    "SELECT file_path FROM recordings "
+                    "WHERE camera_id=1 "
+                    "  AND started_at < $2::timestamptz "
+                    "  AND COALESCE(ended_at, now()) > $1::timestamptz "
+                    "ORDER BY started_at",
+                    start_iso, end_iso);
+                std::vector<std::string> out;
+                for (const auto& row : r) out.push_back(row["file_path"].as<std::string>());
+                const auto d = w.exec_params(
+                    "SELECT GREATEST(1, LEAST(86400, "
+                    "EXTRACT(EPOCH FROM ($2::timestamptz - $1::timestamptz))::int))",
+                    start_iso, end_iso);
+                return std::make_pair(std::move(out), d[0][0].as<int>());
+            });
+            segments = std::move(res.first);
+            duration_sec = res.second;
+        }
 
         if (segments.empty()) {
             spdlog::warn("export {}: no segments in range", id);
@@ -116,11 +126,13 @@ void Exporter::process(long long id, const std::string& start_iso, const std::st
 
         const pid_t pid = fork();
         if (pid == 0) {
+            const std::string dur = std::to_string(duration_sec);
             execlp("ffmpeg", "ffmpeg",
                    "-loglevel", "error", "-y",
                    "-f", "concat", "-safe", "0",
                    "-i", list_file.c_str(),
                    "-c", "copy",
+                   "-t", dur.c_str(),
                    "-movflags", "+faststart",
                    out_path.c_str(),
                    static_cast<char*>(nullptr));

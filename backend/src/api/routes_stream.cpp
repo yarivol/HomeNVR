@@ -133,10 +133,12 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                         std::filesystem::remove_all(entry.path());
             } catch (...) {}
 
-            // сегменты диапазона
+            // сегменты диапазона + его длительность (для -t: активный сегмент
+            // растёт на лету, без лимита ffmpeg читал бы его до закрытия)
             std::vector<std::string> segments;
+            int duration_sec = 0;
             try {
-                segments = db.tx([&](pqxx::work& w) {
+                const auto res = db.tx([&](pqxx::work& w) {
                     const auto r = w.exec_params(
                         "SELECT file_path FROM recordings "
                         "WHERE camera_id=1 "
@@ -146,8 +148,14 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                         start, end);
                     std::vector<std::string> out;
                     for (const auto& row : r) out.push_back(row["file_path"].as<std::string>());
-                    return out;
+                    const auto d = w.exec_params(
+                        "SELECT GREATEST(1, LEAST(86400, "
+                        "EXTRACT(EPOCH FROM ($2::timestamptz - $1::timestamptz))::int))",
+                        start, end);
+                    return std::make_pair(std::move(out), d[0][0].as<int>());
                 });
+                segments = std::move(res.first);
+                duration_sec = res.second;
             } catch (...) {
                 return json_error(400, "invalid time range");
             }
@@ -164,8 +172,9 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                     f << "file '" << (std::filesystem::path(recordings_path) / seg).generic_string() << "'\n";
             }
 
-            // ffmpeg: concat -> HLS (stream copy)
+            // ffmpeg: concat -> HLS (stream copy); -t ограничивает длительность
             const std::string playlist = (dir / "index.m3u8").generic_string();
+            const std::string dur = std::to_string(duration_sec);
             const pid_t pid = fork();
             if (pid == 0) {
                 execlp("ffmpeg", "ffmpeg",
@@ -173,6 +182,7 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
                        "-f", "concat", "-safe", "0",
                        "-i", list_file.c_str(),
                        "-c", "copy",
+                       "-t", dur.c_str(),
                        "-f", "hls", "-hls_time", "4",
                        "-hls_playlist_type", "vod",
                        playlist.c_str(),
