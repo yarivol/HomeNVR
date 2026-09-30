@@ -7,6 +7,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./data/recordings:/data/recordings:ro
+      - ./data/exports:/data/exports:ro
     depends_on:
       frontend:
         condition: service_started
@@ -29,11 +30,15 @@ services:
       RECORDINGS_PATH: /data/recordings
       THUMBNAILS_PATH: /data/thumbnails
       EXPORTS_PATH: /data/exports
+      LIVE_PATH: /data/live
+      HLS_PATH: /data/hls
       SECRET_KEY_FILE: /run/secrets/secret_key
     volumes:
       - ./data/recordings:/data/recordings
       - ./data/thumbnails:/data/thumbnails
       - ./data/exports:/data/exports
+      - ./data/live:/data/live
+      - ./data/hls:/data/hls
     secrets:
       - secret_key
     depends_on:

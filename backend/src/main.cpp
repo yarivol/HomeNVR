@@ -13,6 +13,8 @@
 #include "recorder/segment_recorder.hpp"
 #include "motion/motion_detector.hpp"
 #include "storage/storage_manager.hpp"
+#include "stream/live_stream.hpp"
+#include "exporter/exporter.hpp"
 #include "ws/ws_hub.hpp"
 
 int main() {
@@ -101,6 +103,15 @@ int main() {
     });
     motion.start();
 
+    // Live HLS (Phase 5): ffmpeg RTSP→HLS под супервизором
+    LiveStream live(cfg.live_path);
+    live.set_url_provider(main_rtsp_url);
+    live.start();
+
+    // Экспорт MP4 (Phase 5): очередь задач, stream copy
+    Exporter exporter(db, cfg.recordings_path, cfg.exports_path);
+    exporter.start();
+
     crow::SimpleApp app;
 
     // Health check (ТЗ §59) — без авторизации, для Docker
@@ -137,13 +148,17 @@ int main() {
     // API
     api::register_auth_routes(app, db);
     api::register_setup_routes(app, db, key_hex, cam, recorder);
-    api::register_camera_routes(app, db, key_hex, cam, recorder);
+    api::register_camera_routes(app, db, key_hex, cam, recorder, live);
     api::register_storage_routes(app, db, storage);
     api::register_events_routes(app, db, cfg.thumbnails_path);
+    api::register_stream_routes(app, db, exporter, cfg.live_path, cfg.hls_path,
+                                cfg.recordings_path);
 
     spdlog::info("listening on port {}", cfg.port);
     app.port(cfg.port).multithreaded().run();
 
+    exporter.stop();
+    live.stop();
     motion.stop();
     recorder.stop();
     storage.stop();

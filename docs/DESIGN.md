@@ -50,6 +50,9 @@ backend/
     │                     # CameraManager: state machine + exponential backoff reconnect (ТЗ §57)
     ├── recorder/         # SegmentRecorder: RTSP → MP4 сегменты 5 мин, stream copy,
     │                     # ротация на кейфрейме, fMP4 (файл читаем даже при обрыве), metadata в БД
+    ├── stream/           # LiveStream: ffmpeg RTSP→HLS под супервизором (ТЗ §73.1)
+    ├── exporter/         # Exporter: очередь экспортов, concat сегментов → MP4 (stream copy),
+    │                     # TTL 1 час, статусы QUEUED/PROCESSING/READY/FAILED/EXPIRED (ТЗ §38)
     ├── motion/           # MotionDetector: OpenCV pipeline (ТЗ §21) на суб-потоке,
     │                     # зоны detect/ignore (ТЗ §23), cooldown + min duration (ТЗ §22),
     │                     # thumbnails JPEG (ТЗ §26), события в motion_events (ТЗ §24)
@@ -165,7 +168,7 @@ volumes:     # ./data/postgres, ./data/recordings, ./data/config
 - [x] nginx: server_tokens off, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, CSP
 - [x] параметризованные SQL-запросы (exec_params) — защита от SQL injection
 - [x] секреты не попадают в логи (RTSP URL никогда не логируется)
-- [ ] авторизация download endpoints (Phase 3)
+- [x] авторизация download endpoints (X-Accel-Redirect: backend проверяет, nginx отдаёт)
 - [ ] HTTPS при публикации в Интернет (post-MVP)
 
 ## 9. Расширения за пределами MVP

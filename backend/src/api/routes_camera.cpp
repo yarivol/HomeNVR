@@ -10,6 +10,7 @@
 #include "../camera/rtsp_probe.hpp"
 #include "../common/crypto.hpp"
 #include "../recorder/segment_recorder.hpp"
+#include "../stream/live_stream.hpp"
 
 namespace api {
 namespace {
@@ -23,7 +24,7 @@ crow::response json_error(int code, const std::string& msg) {
 }  // namespace
 
 void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::string& key_hex,
-                            CameraManager& cam, SegmentRecorder& recorder) {
+                            CameraManager& cam, SegmentRecorder& recorder, LiveStream& live) {
     // GET /api/camera — настройки без секретов + текущий статус
     CROW_ROUTE(app, "/api/camera")([&db, &cam](const crow::request& req) {
         if (!auth::require_user(req, db)) return json_error(401, "unauthorized");
@@ -75,7 +76,7 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
     // PATCH /api/camera — обновление настроек (ADMIN)
     // body: {name?, ip?, onvif_port?, username?, password?, rtsp_url?, rtsp_sub_url?, enabled?}
     CROW_ROUTE(app, "/api/camera").methods(crow::HTTPMethod::PATCH)(
-        [&db, &key_hex, &cam, &recorder](const crow::request& req) {
+        [&db, &key_hex, &cam, &recorder, &live](const crow::request& req) {
             if (!auth::require_admin(req, db)) return json_error(403, "admin only");
 
             const auto body = crow::json::load(req.body);
@@ -136,6 +137,7 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
 
             cam.reload();
             recorder.reload();
+            live.reload();
             crow::json::wvalue res;
             res["ok"] = true;
             return crow::response(200, res);
