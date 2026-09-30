@@ -61,6 +61,8 @@ docker compose restart nginx        # применить изменения ngin
 | VM не отвечает во время `docker compose build` | Компиляция C++ + работающие контейнеры съедают всю RAM → swap thrash | swap-файл/раздел; не собирать под нагрузкой; `-j2` |
 | Видео не играет в Chromium (readyState 0) | `canPlayType('application/vnd.apple.mpegurl')` отвечает "maybe", но нативно HLS не играет | HlsPlayer: приоритет hls.js (MSE), нативный — только fallback |
 | Circular overwrite не удаляет сегменты | Цель очистки была фиксированная 85% — при лимите <85% цикл не запускался | гистерезис: чистим до `max_storage_usage - 5%` |
+| Frontend в restart-loop от autoheal | Next standalone слушает на `$HOSTNAME` (id контейнера), healthcheck на 127.0.0.1 не проходил | `ENV HOSTNAME=0.0.0.0` в frontend Dockerfile |
+| nginx/frontend healthcheck fail | `localhost` резолвится в ::1, wget туда не ходит | healthcheck на `127.0.0.1` |
 
 ## Backup и восстановление (ТЗ §68, Phase 7)
 
