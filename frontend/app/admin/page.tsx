@@ -187,7 +187,7 @@ function RecordingTab() {
       <label className="text-sm text-neutral-500">Режим записи</label>
       <select className={input} value={mode} onChange={(e) => setMode(e.target.value)}>
         <option value="continuous">Постоянная запись</option>
-        <option value="motion">По движению (скоро)</option>
+        <option value="motion">По движению</option>
       </select>
       <label className="text-sm text-neutral-500">Длительность сегмента (сек)</label>
       <input className={input} type="number" min={60} max={600} value={segSec}
