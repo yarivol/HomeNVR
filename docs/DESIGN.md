@@ -61,7 +61,8 @@ backend/
     │                     # thumbnails JPEG (ТЗ §26), события в motion_events (ТЗ §24)
     ├── storage/          # StorageManager: circular overwrite (ТЗ §20), statvfs,
     │                     # удаление старейших сегментов до 85%, storage.warning/critical в WS,
-    │                     # чистка motion_events + thumbnails старше архива (ретенция событий = архиву)
+    │                     # чистка motion_events + thumbnails старше архива (ретенция событий = архиву),
+    │                     # чистка HLS-сессий архива старше 2 часов
     ├── ws/               # WebSocket-хаб, broadcast событий (ТЗ §41), авторизация по сессии
     ├── db/               # libpqxx: подключение с retry, авто-реконнект при обрыве, миграции
     └── common/           # конфиг из env, AES-256-GCM для секретов камеры (ТЗ §39)
