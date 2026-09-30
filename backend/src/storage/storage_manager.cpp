@@ -12,7 +12,9 @@ namespace fs = std::filesystem;
 namespace {
 constexpr int kCheckIntervalSec = 60;
 constexpr double kWarnThreshold = 0.8;
-constexpr double kCleanupTarget = 0.85;  // чистим с запасом до 85%
+// Гистерезис очистки: чистим до (max_storage_usage - 5%), а не до фиксированного
+// значения — иначе при max_usage < 0.85 очистка вообще не запустится.
+constexpr double kCleanupHysteresis = 0.05;
 }  // namespace
 
 StorageManager::StorageManager(db::Database& db, std::string recordings_path)
@@ -95,7 +97,8 @@ void StorageManager::enforce_limit(const Stats& s) {
 
     int deleted = 0;
     double usage = s.usage_percent;
-    while (usage > kCleanupTarget && deleted < 1000) {
+    const double cleanup_target = max_usage - kCleanupHysteresis;
+    while (usage > cleanup_target && deleted < 1000) {
         // самый старый закрытый сегмент (текущий не трогаем: ended_at IS NOT NULL)
         auto oldest = db_.tx([](pqxx::work& w) -> std::optional<std::pair<long long, std::string>> {
             const auto r = w.exec(
