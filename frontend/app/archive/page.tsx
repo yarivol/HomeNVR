@@ -18,6 +18,7 @@ export default function ArchivePage() {
   const { user, loading } = useAuth();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [listLoaded, setListLoaded] = useState(false);
   const [playUrl, setPlayUrl] = useState("");
   const [preparing, setPreparing] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -27,6 +28,7 @@ export default function ArchivePage() {
   useEffect(() => {
     if (!user) return;
     setPlayUrl("");
+    setListLoaded(false);
     // переход со страницы событий: /archive?date=YYYY-MM-DD&at=<ISO> —
     // подсвечиваем дату и сразу играем сегмент с событием (ТЗ: переход к motion event)
     const q = new URLSearchParams(window.location.search);
@@ -40,6 +42,7 @@ export default function ArchivePage() {
     apiJson<{ recordings: Recording[] }>(`/api/recordings?date=${date}`)
       .then((r) => {
         setRecordings(r.recordings);
+        setListLoaded(true);
         const at = sessionStorage.getItem("archive_autoplay");
         if (at && !autoplayRef.current) {
           autoplayRef.current = true;
@@ -53,7 +56,7 @@ export default function ArchivePage() {
           if (rec) play(rec);
         }
       })
-      .catch(() => setRecordings([]));
+      .catch(() => { setRecordings([]); setListLoaded(true); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, date]);
 
@@ -132,7 +135,9 @@ export default function ArchivePage() {
 
       {message && <p className="animate-fade text-sm text-red-500">{message}</p>}
 
-      {recordings.length === 0 ? (
+      {!listLoaded ? (
+        <p className="animate-fade text-neutral-400">Загрузка…</p>
+      ) : recordings.length === 0 ? (
         <p className="animate-fade text-neutral-400">За этот день записей нет</p>
       ) : (
         <ul className="flex flex-col gap-2">

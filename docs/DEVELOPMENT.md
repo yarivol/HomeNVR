@@ -98,3 +98,10 @@ docker compose restart nginx        # применить изменения ngin
 - `data/` и `.env` в `.gitignore` — секреты не попадают в Git
 - PostgreSQL не опубликован наружу (нет `ports:` у сервиса)
 - Наружу смотрит только nginx (порт 80)
+
+## CI (GitHub Actions)
+
+- `.github/workflows/backend-ci.yml` — на каждый push/PR в `main`, затрагивающий
+  `backend/**`: сборка backend-образа (`docker/build-push-action`, эквивалент
+  `docker compose build backend`) с кэшем слоёв `type=gha` — повторные сборки
+  занимают минуты вместо полной перекомпиляции. Падение сборки = красный пайплайн.

@@ -18,12 +18,14 @@ export default function EventsPage() {
   const { user, loading } = useAuth();
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [events, setEvents] = useState<MotionEvent[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!user) return;
+    setLoaded(false);
     apiJson<{ events: MotionEvent[] }>(`/api/events?date=${date}`)
-      .then((r) => setEvents(r.events))
-      .catch(() => setEvents([]));
+      .then((r) => { setEvents(r.events); setLoaded(true); })
+      .catch(() => { setEvents([]); setLoaded(true); });
   }, [user, date]);
 
   if (loading || !user) return null;
@@ -42,7 +44,9 @@ export default function EventsPage() {
         className="transition-soft rounded-xl border border-neutral-200 bg-white px-4 py-3"
       />
 
-      {events.length === 0 ? (
+      {!loaded ? (
+        <p className="animate-fade text-neutral-400">Загрузка…</p>
+      ) : events.length === 0 ? (
         <p className="animate-fade text-neutral-400">За этот день событий нет</p>
       ) : (
         <ul className="flex flex-col gap-2">
