@@ -79,7 +79,8 @@ std::string validate_setting(const std::string& key, const crow::json::rvalue& v
                 return {};
             }
             case SettingKind::Zones: {
-                auto parsed = nlohmann::json::parse(v.dump(), nullptr, false);
+                // rvalue не имеет dump() — сериализуем через wvalue
+                auto parsed = nlohmann::json::parse(crow::json::wvalue(v).dump(), nullptr, false);
                 if (parsed.is_discarded() || !parsed.is_array())
                     return key + ": ожидается JSON-массив зон";
                 for (const auto& z : parsed) {
@@ -87,8 +88,9 @@ std::string validate_setting(const std::string& key, const crow::json::rvalue& v
                         !z.contains("w") || !z.contains("h"))
                         return key + ": зона должна содержать x, y, w, h";
                     for (const char* f : {"x", "y", "w", "h"}) {
-                        const double val = z[f].get<double>();
-                        if (!std::isfinite(val) || val < 0 || val > 1)
+                        const double val = z[f].is_number() ? z[f].get<double>() : -1.0;
+                        // !(...) — отклоняет и NaN
+                        if (!(val >= 0 && val <= 1))
                             return key + ": координаты зон — доли кадра 0..1";
                     }
                 }
