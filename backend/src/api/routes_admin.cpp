@@ -136,13 +136,18 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             if (!body) return json_error(400, "Некорректный JSON");
 
             // сначала валидируем ВСЕ значения (H3): один неверный параметр —
-            // вся транзакция отклоняется, полуприменённых настроек не бывает
+            // вся транзакция отклоняется, полуприменённых настроек не бывает.
+            // keys() на не-объекте может бросить — ловим (H5)
             std::string validation_error;
-            for (const auto& key : body.keys()) {
-                const std::string k = key;
-                if (!kSettingsRules.count(k)) continue;  // незнакомый ключ — молча пропускаем
-                validation_error = validate_setting(k, body[key]);
-                if (!validation_error.empty()) break;
+            try {
+                for (const auto& key : body.keys()) {
+                    const std::string k = key;
+                    if (!kSettingsRules.count(k)) continue;  // незнакомый ключ — молча пропускаем
+                    validation_error = validate_setting(k, body[key]);
+                    if (!validation_error.empty()) break;
+                }
+            } catch (const std::exception&) {
+                return json_error(400, "Ожидается JSON-объект");
             }
             if (!validation_error.empty()) return json_error(400, validation_error);
 
