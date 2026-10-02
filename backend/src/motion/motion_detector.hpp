@@ -48,8 +48,11 @@ private:
     // Зоны (ТЗ §23): JSON-массивы прямоугольников [{x,y,w,h}] в долях кадра 0..1
     std::string zones_json(const char* key);
 
-    // Создание события + thumbnail (ТЗ §24, §26)
-    void save_event(double score, const std::string& thumbnail_file);
+    // Создание события + thumbnail (ТЗ §24, §26).
+    // started_epoch / span_sec — фактические начало и длительность движения
+    // (H1 аудита: раньше писалась жёстко min_event_sec и started_at = конец-3с)
+    void save_event(double score, double span_sec, double started_epoch,
+                    const std::string& thumbnail_file);
 
     db::Database& db_;
     std::string thumbnails_path_;

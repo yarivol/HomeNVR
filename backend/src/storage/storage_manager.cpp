@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <algorithm>
+#include <unordered_set>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -191,9 +192,47 @@ void StorageManager::cleanup_hls_sessions() {
     }
 }
 
+void StorageManager::cleanup_orphan_files() {
+    try {
+        const auto known = db_.tx([](pqxx::work& w) {
+            std::unordered_set<std::string> paths;
+            const auto r = w.exec("SELECT file_path FROM recordings");
+            for (const auto& row : r) paths.insert(row["file_path"].as<std::string>());
+            return paths;
+        });
+        const auto cutoff = fs::file_time_type::clock::now() - std::chrono::hours(1);
+        int removed = 0;
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(recordings_path_, ec), end; !ec && it != end;
+             it.increment(ec)) {
+            std::error_code ec2;
+            if (!it->is_regular_file(ec2) || ec2) continue;
+            const auto name = it->path().filename().string();
+            if (!name.ends_with(".mp4")) continue;
+            if (it->last_write_time(ec2) >= cutoff || ec2) continue;  // свежие не трогаем
+            const auto rel = fs::relative(it->path(), recordings_path_, ec2).generic_string();
+            if (ec2 || known.count(rel)) continue;
+            fs::remove(it->path(), ec2);
+            if (!ec2) ++removed;
+        }
+        if (removed > 0)
+            spdlog::warn("orphan cleanup: удалено файлов записей без записи в БД: {}", removed);
+    } catch (const std::exception& e) {
+        spdlog::error("orphan cleanup failed: {}", e.what());
+    }
+}
+
 void StorageManager::run() {
     while (running_) {
         const Stats s = collect();
+        ++cycle_count_;
+
+        // I1: протухшие сессии чистятся не только при новом логине
+        try {
+            db_.tx([](pqxx::work& w) {
+                w.exec("DELETE FROM sessions WHERE expires_at < now()");
+            });
+        } catch (...) {}
 
         // уведомления storage.warning / storage.critical (ТЗ §41) — один раз на переход
         const double max_usage = setting_double("max_storage_usage", 0.9);
@@ -213,6 +252,7 @@ void StorageManager::run() {
         enforce_limit(s);
         cleanup_old_events();
         cleanup_hls_sessions();
+        if (cycle_count_ % 10 == 0) cleanup_orphan_files();
 
         for (int i = 0; i < kCheckIntervalSec * 10 && running_; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(100));

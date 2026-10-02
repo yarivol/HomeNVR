@@ -23,6 +23,14 @@ struct LoginAttempts {
 std::mutex g_limiter_mutex;
 std::unordered_map<std::string, LoginAttempts> g_attempts;
 
+// M9 аудита: при отсутствии пользователя argon2-verify не выполнялся —
+// разница времени ответа (~100 мс vs <1 мс) позволяла энумерировать имена.
+// Хеш-пустышка выравнивает timing (считается один раз, лениво).
+const std::string& dummy_hash() {
+    static const std::string h = auth::hash_password("timing-equalizer-dummy");
+    return h;
+}
+
 // чистим протухшие записи, чтобы карта не росла бесконечно
 // (злопыхатель мог бы спамить неудачными логинами с разных поддельных IP)
 void purge_expired() {
@@ -79,8 +87,15 @@ void register_auth_routes(crow::SimpleApp& app, db::Database& db) {
         if (!body || !body.has("username") || !body.has("password"))
             return json_error(400, "Укажите имя пользователя и пароль");
 
-        const std::string username = body["username"].s();
-        const std::string password = body["password"].s();
+        // H5: доступ к полям только с проверкой типа — исключение из .s()
+        // не должно покидать handler
+        std::string username, password;
+        try {
+            username = body["username"].s();
+            password = body["password"].s();
+        } catch (const std::exception&) {
+            return json_error(400, "Некорректные данные");
+        }
         if (username.size() > 64 || password.size() > 128)
             return json_error(400, "Некорректные данные");
 
@@ -97,6 +112,8 @@ void register_auth_routes(crow::SimpleApp& app, db::Database& db) {
         bool ok = false;
         if (user && std::get<2>(*user))
             ok = auth::verify_password(std::get<1>(*user), password);
+        else
+            auth::verify_password(dummy_hash(), password);  // выравниваем timing (M9)
 
         if (!ok) {
             register_fail(ip);

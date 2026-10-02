@@ -56,6 +56,22 @@ std::string random_token() {
     return buf;
 }
 
+// L1 аудита: строгая валидация даты «ГГГГ-ММ-ДД» (раньше мусор типа
+// "abcd-ef-gh" проходил формат и падал в PG-касте → 500 вместо 400)
+bool valid_date_str(const std::string& d) {
+    if (d.size() != 10 || d[4] != '-' || d[7] != '-') return false;
+    for (int i : {0, 1, 2, 3, 5, 6, 8, 9})
+        if (d[i] < '0' || d[i] > '9') return false;
+    const int y = std::stoi(d.substr(0, 4));
+    const int m = std::stoi(d.substr(5, 2));
+    const int day = std::stoi(d.substr(8, 2));
+    if (y < 2000 || m < 1 || m > 12 || day < 1) return false;
+    static const int mdays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    int maxd = mdays[m - 1];
+    if (m == 2 && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0))) maxd = 29;
+    return day <= maxd;
+}
+
 }  // namespace
 
 void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& exporter,
@@ -84,7 +100,7 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
         const char* date = req.url_params.get("date");
         if (!date) return json_error(400, "Укажите дату (ГГГГ-ММ-ДД)");
         const std::string d = date;
-        if (d.size() != 10 || d[4] != '-' || d[7] != '-')
+        if (!valid_date_str(d))
             return json_error(400, "Некорректный формат даты");
 
         try {
@@ -123,8 +139,13 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
             if (!body || !body.has("start") || !body.has("end"))
                 return json_error(400, "Укажите начало и конец периода");
 
-            const std::string start = body["start"].s();
-            const std::string end = body["end"].s();
+            std::string start, end;
+            try {
+                start = body["start"].s();
+                end = body["end"].s();
+            } catch (const std::exception&) {
+                return json_error(400, "Некорректные данные");
+            }
 
             // устаревшие HLS-сессии чистит StorageManager (каждый цикл, TTL 2 часа)
 
@@ -236,10 +257,19 @@ void register_stream_routes(crow::SimpleApp& app, db::Database& db, Exporter& ex
             if (!body || !body.has("start") || !body.has("end"))
                 return json_error(400, "Укажите начало и конец периода");
 
+            std::string start, end;
             try {
-                const long long id = exporter.create(body["start"].s(), body["end"].s());
-                spdlog::info("export #{} создан: {} .. {}", id,
-                             std::string(body["start"].s()), std::string(body["end"].s()));
+                start = body["start"].s();
+                end = body["end"].s();
+            } catch (const std::exception&) {
+                return json_error(400, "Некорректные данные");
+            }
+            if (start.empty() || end.empty())
+                return json_error(400, "Некорректный период времени");
+
+            try {
+                const long long id = exporter.create(start, end);
+                spdlog::info("export #{} создан: {} .. {}", id, start, end);
                 crow::json::wvalue res;
                 res["id"] = id;
                 res["status"] = "QUEUED";

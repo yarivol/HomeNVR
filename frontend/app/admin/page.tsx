@@ -279,24 +279,31 @@ function VideoTab() {
 function RecordingTab() {
   const [mode, setMode] = useState("continuous");
   const [segSec, setSegSec] = useState(300);
+  const [preBuf, setPreBuf] = useState(10);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
     apiJson<Record<string, unknown>>("/api/admin/settings").then((s) => {
       setMode(String(s.recording_mode ?? "continuous"));
       setSegSec(Number(s.segment_duration_sec ?? 300));
+      setPreBuf(Number(s.pre_buffer_sec ?? 10));
     }).catch(() => {});
   }, []);
 
   async function save() {
+    setMsg("");
     try {
       await apiJson("/api/admin/settings", {
         method: "PATCH",
-        body: JSON.stringify({ recording_mode: mode, segment_duration_sec: segSec }),
+        body: JSON.stringify({
+          recording_mode: mode,
+          segment_duration_sec: segSec,
+          pre_buffer_sec: preBuf,
+        }),
       });
       setMsg("Сохранено ✓");
-    } catch {
-      setMsg("Ошибка сохранения");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Ошибка сохранения");
     }
   }
 
@@ -308,8 +315,17 @@ function RecordingTab() {
         <option value="motion">По движению</option>
       </select>
       <label className="text-sm text-neutral-500">Длительность сегмента (сек)</label>
-      <input className={input} type="number" min={60} max={600} value={segSec}
+      <input className={input} type="number" min={60} max={3600} value={segSec}
         onChange={(e) => setSegSec(Number(e.target.value))} />
+      <label className="text-sm text-neutral-500">
+        Pre-buffer — запас до начала движения (сек)
+      </label>
+      <input className={input} type="number" min={0} max={60} value={preBuf}
+        onChange={(e) => setPreBuf(Number(e.target.value))} />
+      <p className="text-xs text-neutral-400">
+        Используется только в режиме «По движению»: событие записывается с запасом
+        до его начала.
+      </p>
       {msg && <p className="text-sm text-neutral-600">{msg}</p>}
       <button className={btn} onClick={save}>Сохранить</button>
     </div>
@@ -373,12 +389,47 @@ function MotionTab() {
 /* ---------------- Хранилище (ТЗ §48) ---------------- */
 function StorageTab() {
   const [stats, setStats] = useState<Record<string, number | string> | null>(null);
+  const [maxUsage, setMaxUsage] = useState(90);
+  const [minFree, setMinFree] = useState(10);
+  const [msg, setMsg] = useState("");
+
+  const loadStats = () =>
+    apiJson<Record<string, number | string>>("/api/storage")
+      .then(setStats)
+      .catch(() => {});
 
   useEffect(() => {
-    apiJson<Record<string, number | string>>("/api/storage").then(setStats).catch(() => {});
+    loadStats();
+    apiJson<Record<string, unknown>>("/api/admin/settings").then((s) => {
+      setMaxUsage(Math.round(Number(s.max_storage_usage ?? 0.9) * 100));
+      setMinFree(Math.round(Number(s.min_free_space ?? 0.1) * 100));
+    }).catch(() => {});
   }, []);
 
-  const gb = (b?: number) => (b === undefined ? "—" : (b / 1024 ** 3).toFixed(1) + " ГБ");
+  async function save() {
+    setMsg("");
+    try {
+      await apiJson("/api/admin/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          max_storage_usage: maxUsage / 100,
+          min_free_space: minFree / 100,
+        }),
+      });
+      setMsg("Сохранено ✓");
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Ошибка сохранения");
+    }
+  }
+
+  const gb = (b?: number | string) =>
+    b === undefined || b === null ? "—" : (Number(b) / 1024 ** 3).toFixed(1) + " ГБ";
+
+  // M5: диск может быть заполнен данными, не относящимися к архиву —
+  // тогда чистка удалит записи «впустую», это надо показывать админу
+  const nonArchive = Number(stats?.non_archive_bytes ?? 0);
+  const total = Number(stats?.total_bytes ?? 0);
+  const nonArchiveHigh = total > 0 && nonArchive / total > 0.15;
 
   return (
     <div className={card}>
@@ -387,9 +438,27 @@ function StorageTab() {
       ) : (
         <>
           <Row label="Занято на диске" value={`${stats.usage_percent}%`} />
-          <Row label="Всего" value={gb(stats.total_bytes as number)} />
-          <Row label="Свободно" value={gb(stats.free_bytes as number)} />
-          <Row label="Размер архива" value={gb(stats.archive_bytes as number)} />
+          <Row label="Всего" value={gb(stats.total_bytes)} />
+          <Row label="Свободно" value={gb(stats.free_bytes)} />
+          <Row label="Размер архива" value={gb(stats.archive_bytes)} />
+          {nonArchiveHigh && (
+            <p className="text-sm text-red-600">
+              ⚠ {gb(nonArchive)} занято данными вне архива записей (система, база,
+              другие файлы). При заполнении диска старые записи будут удаляться,
+              но место это не освободит — проверьте, что занимает диск.
+            </p>
+          )}
+          <hr />
+          <label className="text-sm text-neutral-500">
+            Максимальное заполнение диска архивом (%)
+          </label>
+          <input className={input} type="number" min={50} max={95} value={maxUsage}
+            onChange={(e) => setMaxUsage(Number(e.target.value))} />
+          <label className="text-sm text-neutral-500">Минимальный свободный объём (%)</label>
+          <input className={input} type="number" min={5} max={50} value={minFree}
+            onChange={(e) => setMinFree(Number(e.target.value))} />
+          {msg && <p className="text-sm text-neutral-600">{msg}</p>}
+          <button className={btn} onClick={save}>Сохранить</button>
           <p className="text-sm text-neutral-500">
             При заполнении диска старые записи удаляются автоматически — запись не останавливается.
           </p>

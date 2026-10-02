@@ -23,6 +23,11 @@ crow::response json_error(int code, const std::string& msg) {
     return crow::response(code, res);
 }
 
+// L6: RTSP URL уходит в ffmpeg/libav — только rtsp:// и rtsps://
+bool valid_rtsp_url(const std::string& u) {
+    return u.rfind("rtsp://", 0) == 0 || u.rfind("rtsps://", 0) == 0;
+}
+
 }  // namespace
 
 void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::string& key_hex,
@@ -84,51 +89,70 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
             const auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Некорректный JSON");
 
+            // H5: разбор и валидация ДО транзакции — исключение из .s()/.i()/.b()
+            // не покидает handler; ошибочные типы дают 400, а не 500/crash
+            std::optional<std::string> v_name, v_ip, v_user, v_pass, v_rtsp, v_rtsp_sub;
+            std::optional<int> v_port;
+            std::optional<bool> v_enabled;
+            try {
+                if (body.has("name"))     v_name = std::string(body["name"].s());
+                if (body.has("ip"))       v_ip = std::string(body["ip"].s());
+                if (body.has("onvif_port")) v_port = static_cast<int>(body["onvif_port"].i());
+                if (body.has("username")) v_user = std::string(body["username"].s());
+                if (body.has("password")) v_pass = std::string(body["password"].s());
+                if (body.has("enabled"))  v_enabled = body["enabled"].b();
+                if (body.has("rtsp_url")) v_rtsp = std::string(body["rtsp_url"].s());
+                if (body.has("rtsp_sub_url")) v_rtsp_sub = std::string(body["rtsp_sub_url"].s());
+            } catch (const std::exception&) {
+                return json_error(400, "Неверный тип значения");
+            }
+            if (v_port.has_value() && (*v_port < 1 || *v_port > 65535))
+                return json_error(400, "Порт должен быть 1–65535");
+            if (v_rtsp.has_value() && !v_rtsp->empty() && !valid_rtsp_url(*v_rtsp))
+                return json_error(400, "RTSP URL должен начинаться с rtsp://");
+            if (v_rtsp_sub.has_value() && !v_rtsp_sub->empty() && !valid_rtsp_url(*v_rtsp_sub))
+                return json_error(400, "RTSP URL должен начинаться с rtsp://");
+
             try {
                 db.tx([&](pqxx::work& w) {
                     // камера одна — строка с id=1 создаётся при первом сохранении
                     w.exec("INSERT INTO camera (id) VALUES (1) ON CONFLICT (id) DO NOTHING");
 
-                    if (body.has("name"))
-                        w.exec_params("UPDATE camera SET name=$1, updated_at=now() WHERE id=1",
-                                      std::string(body["name"].s()));
-                    if (body.has("ip"))
-                        w.exec_params("UPDATE camera SET ip_address=$1, updated_at=now() WHERE id=1",
-                                      std::string(body["ip"].s()));
-                    if (body.has("onvif_port"))
-                        w.exec_params("UPDATE camera SET onvif_port=$1, updated_at=now() WHERE id=1",
-                                      static_cast<int>(body["onvif_port"].i()));
-                    if (body.has("username"))
-                        w.exec_params("UPDATE camera SET username=$1, updated_at=now() WHERE id=1",
-                                      std::string(body["username"].s()));
-                    if (body.has("password"))
+                    if (v_name.has_value())
+                        w.exec_params("UPDATE camera SET name=$1, updated_at=now() WHERE id=1", *v_name);
+                    if (v_ip.has_value())
+                        w.exec_params("UPDATE camera SET ip_address=$1, updated_at=now() WHERE id=1", *v_ip);
+                    if (v_port.has_value())
+                        w.exec_params("UPDATE camera SET onvif_port=$1, updated_at=now() WHERE id=1", *v_port);
+                    if (v_user.has_value())
+                        w.exec_params("UPDATE camera SET username=$1, updated_at=now() WHERE id=1", *v_user);
+                    if (v_pass.has_value())
                         w.exec_params("UPDATE camera SET password_encrypted=$1, updated_at=now() WHERE id=1",
-                                      crypto::encrypt(std::string(body["password"].s()), key_hex));
-                    if (body.has("enabled"))
-                        w.exec_params("UPDATE camera SET enabled=$1, updated_at=now() WHERE id=1",
-                                      static_cast<bool>(body["enabled"].b()));
+                                      crypto::encrypt(*v_pass, key_hex));
+                    if (v_enabled.has_value())
+                        w.exec_params("UPDATE camera SET enabled=$1, updated_at=now() WHERE id=1", *v_enabled);
 
-                    for (const char* key : {"rtsp_url", "rtsp_sub_url"}) {
-                        if (!body.has(key)) continue;
-                        const std::string url = body[key].s();
-                        const bool is_sub = std::string(key) == "rtsp_sub_url";
+                    struct UrlUpdate { const std::optional<std::string>* val; bool is_sub; };
+                    for (const auto& u : {UrlUpdate{&v_rtsp, false}, UrlUpdate{&v_rtsp_sub, true}}) {
+                        if (!u.val->has_value()) continue;
+                        const std::string& url = **u.val;
                         if (url.empty()) {
                             w.exec_params("DELETE FROM camera_profiles WHERE camera_id=1 AND is_substream=$1",
-                                          is_sub);
+                                          u.is_sub);
                         } else {
                             const auto exists = w.exec_params(
-                                "SELECT id FROM camera_profiles WHERE camera_id=1 AND is_substream=$1", is_sub);
+                                "SELECT id FROM camera_profiles WHERE camera_id=1 AND is_substream=$1", u.is_sub);
                             if (exists.empty())
                                 w.exec_params(
                                     "INSERT INTO camera_profiles (camera_id, profile_name, is_substream, rtsp_url_encrypted) "
                                     "VALUES (1, $1, $2, $3)",
-                                    is_sub ? "sub" : "main", is_sub,
+                                    u.is_sub ? "sub" : "main", u.is_sub,
                                     crypto::encrypt(url, key_hex));
                             else
                                 w.exec_params(
                                     "UPDATE camera_profiles SET rtsp_url_encrypted=$1, updated_at=now() "
                                     "WHERE camera_id=1 AND is_substream=$2",
-                                    crypto::encrypt(url, key_hex), is_sub);
+                                    crypto::encrypt(url, key_hex), u.is_sub);
                         }
                     }
                 });
@@ -167,10 +191,17 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
             if (!body || !body.has("ip"))
                 return json_error(400, "ip required");
 
-            const std::string ip = body["ip"].s();
-            const int port = body.has("onvif_port") ? static_cast<int>(body["onvif_port"].i()) : 80;
-            const std::string user = body.has("username") ? std::string(body["username"].s()) : "";
-            const std::string pass = body.has("password") ? std::string(body["password"].s()) : "";
+            std::string ip, user, pass, rtsp_url;
+            int port = 80;
+            try {
+                ip = body["ip"].s();
+                if (body.has("onvif_port")) port = static_cast<int>(body["onvif_port"].i());
+                if (body.has("username")) user = body["username"].s();
+                if (body.has("password")) pass = body["password"].s();
+                if (body.has("rtsp_url")) rtsp_url = body["rtsp_url"].s();
+            } catch (const std::exception&) {
+                return json_error(400, "Неверный тип значения");
+            }
 
             crow::json::wvalue res;
 
@@ -202,8 +233,10 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
             }
 
             // 2. RTSP: пробуем поток, если URL передан
-            if (body.has("rtsp_url") && !std::string(body["rtsp_url"].s()).empty()) {
-                const bool rtsp_ok = rtsp::probe(body["rtsp_url"].s());
+            if (!rtsp_url.empty()) {
+                if (!valid_rtsp_url(rtsp_url))
+                    return json_error(400, "RTSP URL должен начинаться с rtsp://");
+                const bool rtsp_ok = rtsp::probe(rtsp_url);
                 res["rtsp"]["ok"] = rtsp_ok;
                 if (!rtsp_ok)
                     res["rtsp"]["error"] = "Не удалось подключиться к потоку";
@@ -299,6 +332,17 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
             const auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Некорректный JSON");
 
+            // H5: типы проверяются до использования
+            std::optional<int> v_w, v_h, v_fps, v_br;
+            try {
+                if (body.has("width"))        v_w = static_cast<int>(body["width"].i());
+                if (body.has("height"))       v_h = static_cast<int>(body["height"].i());
+                if (body.has("fps"))          v_fps = static_cast<int>(body["fps"].i());
+                if (body.has("bitrate_kbps")) v_br = static_cast<int>(body["bitrate_kbps"].i());
+            } catch (const std::exception&) {
+                return json_error(400, "Неверный тип значения (width/height/fps/bitrate_kbps)");
+            }
+
             const auto creds = load_creds();
             if (!creds) return json_error(400, "Камера не настроена");
 
@@ -317,10 +361,13 @@ void register_camera_routes(crow::SimpleApp& app, db::Database& db, const std::s
             if (!onvif.get_video_encoder_config(profiles.front().token, cfg))
                 return json_error(400, "Камера не отдаёт конфигурацию видеокодировщика");
 
-            const int new_w = body.has("width") ? static_cast<int>(body["width"].i()) : cfg.width;
-            const int new_h = body.has("height") ? static_cast<int>(body["height"].i()) : cfg.height;
-            const int new_fps = body.has("fps") ? static_cast<int>(body["fps"].i()) : cfg.fps;
-            const int new_br = body.has("bitrate_kbps") ? static_cast<int>(body["bitrate_kbps"].i()) : cfg.bitrate_kbps;
+            const int new_w = v_w.value_or(cfg.width);
+            const int new_h = v_h.value_or(cfg.height);
+            const int new_fps = v_fps.value_or(cfg.fps);
+            const int new_br = v_br.value_or(cfg.bitrate_kbps);
+            // базовая sanity-валидация даже без опций камеры
+            if (new_w < 0 || new_h < 0 || new_fps < 0 || new_br < 0)
+                return json_error(400, "Значения не могут быть отрицательными");
 
             // валидация по опциям камеры, если она их отдаёт
             VideoEncoderOptions opts;

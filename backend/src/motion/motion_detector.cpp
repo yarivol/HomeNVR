@@ -8,6 +8,8 @@
 #include <deque>
 #include <filesystem>
 
+#include "../camera/av_utils.hpp"
+
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -137,10 +139,10 @@ std::string MotionDetector::current_url() {
     }
 }
 
-void MotionDetector::save_event(double score, const std::string& thumbnail_file) {
-    // ВАЖНО: min_event_sec() сам ходит в БД (db.tx) — вызываем ДО транзакции,
-    // иначе вложенный db.tx = самодедлок на Database::mutex_
-    const int dur = min_event_sec();
+void MotionDetector::save_event(double score, double span_sec, double started_epoch,
+                                const std::string& thumbnail_file) {
+    // ВАЖНО: эта функция — единственная точка записи события; она вызывается
+    // ВНЕ лямбды другого db.tx (иначе вложенный tx = самодедлок)
     try {
         db_.tx([&](pqxx::work& w) {
             // привязываем к текущему записываемому сегменту
@@ -149,9 +151,8 @@ void MotionDetector::save_event(double score, const std::string& thumbnail_file)
                 "duration, motion_score, thumbnail_path) "
                 "VALUES (1, "
                 "  (SELECT id FROM recordings WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1), "
-                "  now() - make_interval(secs => $2), now(), "
-                "  make_interval(secs => $2), $1, $3)",
-                score, dur, thumbnail_file);
+                "  to_timestamp($3), now(), make_interval(secs => $2), $1, $4)",
+                score, span_sec, started_epoch, thumbnail_file);
         });
     } catch (const std::exception& e) {
         spdlog::error("motion event save failed: {}", e.what());
@@ -180,7 +181,13 @@ bool MotionDetector::detection_session(const std::string& url) {
     AVFormatContext* in = avformat_alloc_context();
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "rtsp_transport", "tcp", 0);
-    av_dict_set(&opts, "stimeout", "10000000", 0);
+    // «stimeout» удалена в FFmpeg 7 — ставим обе (лишняя игнорируется)
+    av_dict_set(&opts, "timeout", "20000000", 0);
+    av_dict_set(&opts, "stimeout", "20000000", 0);
+
+    avx::Interrupt irq;
+    in->interrupt_callback = {&avx::Interrupt::check, &irq};
+    irq.arm_seconds(20);
 
     if (avformat_open_input(&in, url.c_str(), nullptr, &opts) < 0 ||
         avformat_find_stream_info(in, nullptr) < 0) {
@@ -228,7 +235,12 @@ bool MotionDetector::detection_session(const std::string& url) {
     cv::Mat best_frame;             // кадр с максимальным движением для thumbnail
     bool in_event = false;
     double event_max_score = 0;
+    // таймер тишины (steady): по нему событие ЗАКРЫВАЕТСЯ
     auto event_start = std::chrono::steady_clock::now();
+    // фактические границы движения (wall clock) — пишутся в БД (H1 аудита):
+    // раньше duration всегда = min_event_sec, started_at = «конец минус 3с»
+    auto event_first_wall = std::chrono::system_clock::now();
+    auto event_last_motion_wall = event_first_wall;
     auto last_event_end = std::chrono::steady_clock::now() - std::chrono::hours(1);
     int frame_counter = 0;
 
@@ -250,6 +262,7 @@ bool MotionDetector::detection_session(const std::string& url) {
     bool stream_ok = true;
 
     while (running_ && !reload_requested_) {
+        irq.arm_seconds(30);
         if (av_read_frame(in, pkt) < 0) {
             spdlog::warn("motion: stream read error");
             stream_ok = false;
@@ -329,6 +342,8 @@ bool MotionDetector::detection_session(const std::string& url) {
             if (score > min_area_ratio && !in_event && since_last >= cooldown) {
                 in_event = true;
                 event_start = now;
+                event_first_wall = std::chrono::system_clock::now();
+                event_last_motion_wall = event_first_wall;
                 event_max_score = score;
                 best_frame = gray.clone();
                 if (event_fn_) event_fn_("motion.started", "{}");
@@ -338,33 +353,51 @@ bool MotionDetector::detection_session(const std::string& url) {
                     event_max_score = score;
                     best_frame = gray.clone();
                 }
-                // событие заканчивается после 2 секунд тишины
                 if (score <= min_area_ratio * 0.3) {
-                    const double elapsed = std::chrono::duration<double>(now - event_start).count();
-                    // тишина длиннее минимальной длительности события → завершаем
-                    if (elapsed >= min_event) {
+                    // тишина: закрываем событие, когда она длится >= min_event
+                    const double quiet_sec = std::chrono::duration<double>(now - event_start).count();
+                    if (quiet_sec >= min_event) {
                         in_event = false;
                         last_event_end = now;
 
-                        // thumbnail (ТЗ §26): маленький JPEG
-                        std::string thumb_file;
-                        const std::string name =
-                            "event_" +
-                            std::to_string(
-                                std::chrono::system_clock::now().time_since_epoch().count()) +
-                            ".jpg";
-                        if (cv::imwrite((fs::path(thumbnails_path_) / name).generic_string(),
-                                        best_frame, {cv::IMWRITE_JPEG_QUALITY, 70}))
-                            thumb_file = name;
+                        // фактическая длительность движения (без хвоста тишины)
+                        const double span_sec =
+                            std::chrono::duration<double>(event_last_motion_wall -
+                                                          event_first_wall).count();
+                        // ТЗ §22 «минимальная длительность события» — фильтр:
+                        // короткие срабатывания (глит/вспышка) не сохраняем,
+                        // но motion.ended шлём всегда (recorder по нему
+                        // останавливает запись в режиме «по движению»)
+                        if (span_sec >= min_event) {
+                            std::string thumb_file;
+                            const std::string name =
+                                "event_" +
+                                std::to_string(std::chrono::system_clock::now()
+                                                   .time_since_epoch()
+                                                   .count()) +
+                                ".jpg";
+                            if (cv::imwrite((fs::path(thumbnails_path_) / name).generic_string(),
+                                            best_frame, {cv::IMWRITE_JPEG_QUALITY, 70}))
+                                thumb_file = name;
 
-                        save_event(event_max_score, thumb_file);
+                            const double started_epoch =
+                                std::chrono::duration<double>(
+                                    event_first_wall.time_since_epoch()).count();
+                            save_event(event_max_score, span_sec, started_epoch, thumb_file);
+                            spdlog::info("motion ended: длительность {:.1f} с, max score {:.3f}",
+                                         span_sec, event_max_score);
+                        } else {
+                            spdlog::info("motion ended: {:.1f} с < min_event {} — событие не сохранено",
+                                         span_sec, min_event);
+                        }
                         if (event_fn_)
                             event_fn_("motion.ended",
                                       "{\"score\":" + std::to_string(event_max_score) + "}");
-                        spdlog::info("motion ended, max score {:.3f}", event_max_score);
                     }
                 } else {
-                    event_start = now;  // движение продолжается — сдвигаем таймер тишины
+                    // движение продолжается: обновляем таймер тишины и факт. границу
+                    event_start = now;
+                    event_last_motion_wall = std::chrono::system_clock::now();
                 }
             }
         }
@@ -374,15 +407,21 @@ bool MotionDetector::detection_session(const std::string& url) {
     // завершаем его штатно, иначе recorder в режиме "по движению" останется
     // в записи навсегда (motion.ended не дойдёт).
     if (in_event) {
-        std::string thumb_file;
-        const std::string name =
-            "event_" +
-            std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) +
-            ".jpg";
-        if (cv::imwrite((fs::path(thumbnails_path_) / name).generic_string(), best_frame,
-                        {cv::IMWRITE_JPEG_QUALITY, 70}))
-            thumb_file = name;
-        save_event(event_max_score, thumb_file);
+        const double span_sec =
+            std::chrono::duration<double>(event_last_motion_wall - event_first_wall).count();
+        if (span_sec >= min_event) {
+            std::string thumb_file;
+            const std::string name =
+                "event_" +
+                std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) +
+                ".jpg";
+            if (cv::imwrite((fs::path(thumbnails_path_) / name).generic_string(), best_frame,
+                            {cv::IMWRITE_JPEG_QUALITY, 70}))
+                thumb_file = name;
+            const double started_epoch =
+                std::chrono::duration<double>(event_first_wall.time_since_epoch()).count();
+            save_event(event_max_score, span_sec, started_epoch, thumb_file);
+        }
         if (event_fn_)
             event_fn_("motion.ended", "{\"score\":" + std::to_string(event_max_score) + "}");
         spdlog::info("motion ended by session close, max score {:.3f}", event_max_score);

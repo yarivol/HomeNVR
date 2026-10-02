@@ -2,6 +2,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include "av_utils.hpp"
+
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/dict.h>
@@ -16,8 +18,16 @@ bool probe(const std::string& url, int timeout_sec) {
 
     AVDictionary* opts = nullptr;
     av_dict_set(&opts, "rtsp_transport", "tcp", 0);
+    // «stimeout» удалена в FFmpeg 7 — ставим обе (лишняя игнорируется)
+    av_dict_set(&opts, "timeout", std::to_string(timeout_sec * 1'000'000).c_str(), 0);
     av_dict_set(&opts, "stimeout", std::to_string(timeout_sec * 1'000'000).c_str(), 0);
     av_dict_set(&opts, "max_delay", "500000", 0);
+
+    // жёсткий потолок всей операции: мёртвое соединение не должно
+    // блокировать поток менеджера камеры
+    avx::Interrupt irq;
+    fmt->interrupt_callback = {&avx::Interrupt::check, &irq};
+    irq.arm_seconds(timeout_sec + 5);
 
     bool ok = false;
     if (avformat_open_input(&fmt, url.c_str(), nullptr, &opts) == 0) {

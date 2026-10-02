@@ -51,6 +51,24 @@ size_t curl_write(char* ptr, size_t size, size_t nmemb, void* userdata) {
     return size * nmemb;
 }
 
+// L5 аудита: значения, вставляемые в SOAP-XML (username, токены профилей),
+// экранируем — иначе спецсимволы ломают разметку / дают XML-инъекцию
+std::string xml_escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (const char c : s) {
+        switch (c) {
+            case '&':  out += "&amp;";  break;
+            case '<':  out += "&lt;";   break;
+            case '>':  out += "&gt;";   break;
+            case '\"': out += "&quot;"; break;
+            case '\'': out += "&apos;"; break;
+            default:   out += c;
+        }
+    }
+    return out;
+}
+
 }  // namespace
 
 OnvifClient::OnvifClient(std::string ip, int port, std::string username, std::string password)
@@ -103,6 +121,7 @@ bool OnvifClient::get_profiles(std::vector<OnvifProfile>& out) {
 bool OnvifClient::get_stream_uri(const std::string& profile_token, std::string& out_uri) {
     if (!resolve_media_url()) return false;
 
+    const std::string tok = xml_escape(profile_token);
     const std::string body =
         "<trt:GetStreamUri xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\">"
         "<trt:StreamSetup>"
@@ -110,7 +129,7 @@ bool OnvifClient::get_stream_uri(const std::string& profile_token, std::string& 
         "<tt:Transport xmlns:tt=\"http://www.onvif.org/ver10/schema\">"
         "<tt:Protocol>RTSP</tt:Protocol></tt:Transport>"
         "</trt:StreamSetup>"
-        "<trt:ProfileToken>" + profile_token + "</trt:ProfileToken>"
+        "<trt:ProfileToken>" + tok + "</trt:ProfileToken>"
         "</trt:GetStreamUri>";
 
     const std::string resp = request(media_url_, body);
@@ -176,8 +195,8 @@ bool OnvifClient::get_video_encoder_options(const std::string& profile_token,
 
     const std::string body =
         "<trt:GetVideoEncoderConfigurationOptions xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\">"
-        "<trt:ConfigurationToken>" + config_token + "</trt:ConfigurationToken>"
-        "<trt:ProfileToken>" + profile_token + "</trt:ProfileToken>"
+        "<trt:ConfigurationToken>" + xml_escape(config_token) + "</trt:ConfigurationToken>"
+        "<trt:ProfileToken>" + xml_escape(profile_token) + "</trt:ProfileToken>"
         "</trt:GetVideoEncoderConfigurationOptions>";
 
     const std::string resp = request(media_url_, body);
@@ -236,7 +255,7 @@ bool OnvifClient::set_video_encoder_config(const VideoEncoderConfig& cfg) {
 
     const std::string body =
         "<trt:SetVideoEncoderConfiguration xmlns:trt=\"http://www.onvif.org/ver10/media/wsdl\">"
-        "<trt:Configuration token=\"" + cfg.token + "\">" + oss.str() + "</trt:Configuration>"
+        "<trt:Configuration token=\"" + xml_escape(cfg.token) + "\">" + oss.str() + "</trt:Configuration>"
         "<trt:ForcePersistence>true</trt:ForcePersistence>"
         "</trt:SetVideoEncoderConfiguration>";
 
@@ -300,7 +319,7 @@ std::string OnvifClient::build_envelope(const std::string& body) const {
         "<s:Header>"
         "<wsse:Security xmlns:wsse=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd\">"
         "<wsse:UsernameToken>"
-        "<wsse:Username>" + username_ + "</wsse:Username>"
+        "<wsse:Username>" + xml_escape(username_) + "</wsse:Username>"
         "<wsse:Password Type=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest\">" +
             digest_b64 + "</wsse:Password>"
         "<wsse:Nonce>" + nonce_b64 + "</wsse:Nonce>"

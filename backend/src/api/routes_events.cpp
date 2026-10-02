@@ -30,9 +30,16 @@ void register_events_routes(crow::SimpleApp& app, db::Database& db,
             return db.tx([&](pqxx::work& w) {
                 pqxx::result r;
                 if (date) {
-                    // строгая валидация формата даты
+                    // строгая валидация: формат И реальная дата (L1 аудита —
+                    // мусор раньше падал в PG-касте → 500 вместо 400)
                     const std::string d = date;
                     if (d.size() != 10 || d[4] != '-' || d[7] != '-')
+                        return crow::response(400, "Некорректный формат даты");
+                    bool digits_ok = true;
+                    for (int i : {0, 1, 2, 3, 5, 6, 8, 9})
+                        if (d[i] < '0' || d[i] > '9') { digits_ok = false; break; }
+                    if (!digits_ok || std::stoi(d.substr(5, 2)) < 1 || std::stoi(d.substr(5, 2)) > 12 ||
+                        std::stoi(d.substr(8, 2)) < 1 || std::stoi(d.substr(8, 2)) > 31)
                         return crow::response(400, "Некорректный формат даты");
                     r = w.exec_params(
                         "SELECT id, started_at::text, ended_at::text, motion_score, thumbnail_path "

@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <csignal>
 #include <filesystem>
 
 #include "api/routes.hpp"
@@ -78,6 +79,22 @@ int main() {
     } catch (const std::exception& e) {
         spdlog::error("database: {}", e.what());
         return 1;
+    }
+
+    // H4 аудита — recovery «осиротевших» активных записей: не-gradleful stop
+    // (SIGTERM/SIGKILL/OOM) оставляет recordings с ended_at IS NULL навсегда;
+    // теперь закрываем их при старте (аналогично recovery PROCESSING-экспортов)
+    try {
+        const auto orphans = db.tx([](pqxx::work& w) {
+            return w.exec(
+                "UPDATE recordings SET ended_at = now(), duration = now() - started_at "
+                "WHERE ended_at IS NULL RETURNING id").size();
+        });
+        if (orphans > 0)
+            spdlog::info("recovery: закрыто активных записей, оставшихся с прошлого запуска: {}",
+                         orphans);
+    } catch (const std::exception& e) {
+        spdlog::error("recovery of active recordings failed: {}", e.what());
     }
 
     // WebSocket-хаб и менеджер камеры
@@ -200,7 +217,18 @@ int main() {
     api::register_admin_routes(app, db, motion, recorder, cfg.logs_path);
 
     spdlog::info("listening on port {}", cfg.port);
-    app.port(cfg.port).multithreaded().run();
+
+    // H4: SIGTERM/SIGINT — graceful stop (Crow сам сигналы не обрабатывает:
+    // без этого docker stop убивает процесс без закрытия активного сегмента).
+    // stop() прерывает app.run(), дальше main() корректно останавливает модули
+    static crow::SimpleApp* g_app = &app;
+    std::signal(SIGTERM, [](int) { g_app->stop(); });
+    std::signal(SIGINT, [](int) { g_app->stop(); });
+
+    // M1: 4 воркера — долгие запросы (архивная сессия до 60 c) не должны
+    // на 2-ядерной VM (hardware_concurrency = 2) исчерпать пул и «уронить»
+    // /health до ложного unhealthy + рестарта от autoheal
+    app.port(cfg.port).multithreaded(4).run();
 
     exporter.stop();
     live.stop();

@@ -66,6 +66,20 @@ docker compose restart nginx        # применить изменения ngin
 | В режиме «по движению» запись не останавливается | reload детектора посреди активного события терял `motion.ended` | детектор завершает событие при закрытии сессии |
 | Архив/экспорт свежего (ещё пишущегося) сегмента — 404 или ffmpeg «не кончается» | SQL исключал активный сегмент; без `-t` ffmpeg читает растущий fMP4 до его закрытия | `COALESCE(ended_at, now())` в выборке + `-t <длительность>` в ffmpeg |
 
+### Устойчивость к зависаниям (аудит 2026-10)
+
+| Проблема | Причина | Решение |
+|---|---|---|
+| Запись молча умирает при «тихой» смерти сети (NAT timeout, half-open TCP) | Опция RTSP `stimeout` удалена в FFmpeg 7 — таймаут не действовал | `timeout` (FF≥5) + `stimeout` (FF<5) + `interrupt_callback` (avx::Interrupt) с дедлайнами open/read |
+| После рестарта в БД копились записи с `ended_at IS NULL` | SIGTERM не обрабатывался — close_segment не выполнялся | recovery при старте + SIGTERM/SIGINT → `app.stop()` → graceful stop + `stop_grace_period: 30s` |
+| Очередь экспортов зависала навсегда | `waitpid` без таймаута | потолок 10 мин (WNOHANG-поллинг), SIGKILL, удаление частичных файлов; sweep файлов-сирот при старте |
+| Один запрос с неверным типом JSON мог уронить backend | `.i()`/`.b()`/`.s()` бросают исключение, Crow его не ловит | все разборы — через try/catch → 400 (routes_auth/setup/camera/admin/stream) |
+| Настройки принимали любые значения (segment=0 → флуд сегментов, max_usage=0 → стирание архива) | whitelist был только на имена ключей | таблица правил с диапазонами (routes_admin.cpp kSettingsRules) |
+| Файлы записей без строки в БД копились вечно | INSERT в open_segment мог упасть после создания файла | StorageManager::cleanup_orphan_files (раз в 10 циклов, файлы старше 1 ч) |
+| Мёртвый live-плейлист при замершем RTSP | ffmpeg без таймаутов ввода | `-timeout`/`-rw_timeout` 15 с в live_stream |
+| Долгие архивные сессии (до 60 с) исчерпывали пул Crow на 2-ядерной VM → ложный unhealthy → рестарт | `multithreaded()` = hardware_concurrency = 2 | `multithreaded(4)` |
+| Диск заполнен «не архивом» — чистка стирала записи впустую | usage считается по всему диску | `non_archive_bytes` в /api/storage + предупреждение в UI |
+
 ## Backup и восстановление (ТЗ §68, Phase 7)
 
 ```bash

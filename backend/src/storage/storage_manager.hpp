@@ -43,11 +43,17 @@ private:
     // удаляет HLS-сессии архива старше 2 часов (раньше чистились только при
     // создании новой сессии — без новых сессий .ts-чанки лежали бы вечно)
     void cleanup_hls_sessions();
+    // удаляет файлы записей без строки в БД (M2 аудита: сбой INSERT после
+    // создания файла / краш между open и INSERT → файл невидим для архива
+    // и чистки → вечная утечка диска). Запуск — раз в 10 циклов (~10 мин),
+    // файлы моложе часа не трогаем (могут быть текущим сегментом)
+    void cleanup_orphan_files();
 
     db::Database& db_;
     std::string recordings_path_;
     std::string thumbnails_path_;
     std::string hls_path_;
+    int cycle_count_ = 0;
 
     EventFn event_fn_;
     std::atomic<bool> running_{false};

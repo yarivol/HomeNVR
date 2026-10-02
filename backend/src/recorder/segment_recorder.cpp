@@ -15,10 +15,27 @@ extern "C" {
 #include <libavutil/timestamp.h>
 }
 
+#include "../camera/av_utils.hpp"
+
 namespace fs = std::filesystem;
 
 namespace {
 constexpr int kReconnectSec = 10;
+// таймауты RTSP-операций: подключение/установление и чтение кадра.
+// «stimeout» удалена в FFmpeg 7 — ставим обе (лишняя игнорируется)
+constexpr int kOpenTimeoutSec = 20;
+constexpr int kReadTimeoutSec = 30;
+// страховка pre-buffer: при немонотонных pts время не урезает буфер,
+// ограничиваем его и размером (6000 пакетов ≈ 100+ с видео)
+constexpr size_t kPrebufMaxPackets = 6000;
+
+void set_rtsp_timeouts(AVDictionary** opts) {
+    av_dict_set(opts, "rtsp_transport", "tcp", 0);
+    const char* open_us = "20000000";  // 20 c в мкс
+    av_dict_set(opts, "timeout", open_us, 0);    // FFmpeg >= 5
+    av_dict_set(opts, "stimeout", open_us, 0);   // FFmpeg < 5 (на новых игнорируется)
+    av_dict_set(opts, "max_delay", "500000", 0);
+}
 
 // Путь сегмента (ТЗ §19): recordings/camera/YYYY/MM/DD/HH/HHMM.mp4
 std::string make_segment_path(const std::string& root) {
@@ -191,9 +208,13 @@ void SegmentRecorder::run() {
 bool SegmentRecorder::record_session(const std::string& url, int segment_sec) {
     AVFormatContext* in = avformat_alloc_context();
     AVDictionary* opts = nullptr;
-    av_dict_set(&opts, "rtsp_transport", "tcp", 0);
-    av_dict_set(&opts, "stimeout", "10000000", 0);  // 10 сек
-    av_dict_set(&opts, "max_delay", "500000", 0);
+    set_rtsp_timeouts(&opts);
+
+    // interrupt_callback: мёртвое соединение прерывается по таймауту,
+    // иначе av_read_frame блокируется вечно и запись молча умирает
+    avx::Interrupt irq;
+    in->interrupt_callback = {&avx::Interrupt::check, &irq};
+    irq.arm_seconds(kOpenTimeoutSec);
 
     if (avformat_open_input(&in, url.c_str(), nullptr, &opts) < 0) {
         spdlog::warn("recorder: cannot open stream");
@@ -203,6 +224,7 @@ bool SegmentRecorder::record_session(const std::string& url, int segment_sec) {
     }
     av_dict_free(&opts);
 
+    irq.arm_seconds(kOpenTimeoutSec);
     if (avformat_find_stream_info(in, nullptr) < 0) {
         avformat_close_input(&in);
         return false;
@@ -313,6 +335,8 @@ bool SegmentRecorder::record_session(const std::string& url, int segment_sec) {
     AVPacket* pkt = av_packet_alloc();
 
     while (running_ && !reload_requested_) {
+        // дедлайн чтения: данные обязаны приходить (RTCP-keepalive летит чаще)
+        irq.arm_seconds(kReadTimeoutSec);
         if (av_read_frame(in, pkt) < 0) {
             spdlog::warn("recorder: stream read error");
             stream_ok = false;
@@ -377,9 +401,11 @@ bool SegmentRecorder::record_session(const std::string& url, int segment_sec) {
 bool SegmentRecorder::record_session_motion(const std::string& url, int segment_sec, int pre_buffer_sec) {
     AVFormatContext* in = avformat_alloc_context();
     AVDictionary* opts = nullptr;
-    av_dict_set(&opts, "rtsp_transport", "tcp", 0);
-    av_dict_set(&opts, "stimeout", "10000000", 0);
-    av_dict_set(&opts, "max_delay", "500000", 0);
+    set_rtsp_timeouts(&opts);
+
+    avx::Interrupt irq;
+    in->interrupt_callback = {&avx::Interrupt::check, &irq};
+    irq.arm_seconds(kOpenTimeoutSec);
 
     if (avformat_open_input(&in, url.c_str(), nullptr, &opts) < 0) {
         spdlog::warn("recorder (motion): cannot open stream");
@@ -389,6 +415,7 @@ bool SegmentRecorder::record_session_motion(const std::string& url, int segment_
     }
     av_dict_free(&opts);
 
+    irq.arm_seconds(kOpenTimeoutSec);
     if (avformat_find_stream_info(in, nullptr) < 0) {
         avformat_close_input(&in);
         return false;
@@ -505,6 +532,11 @@ bool SegmentRecorder::record_session_motion(const std::string& url, int segment_
             av_packet_free(&prebuf.front().pkt);
             prebuf.pop_front();
         }
+        // страховка от немонотонных pts: время не урезает буфер — урезаем размер
+        while (prebuf.size() > kPrebufMaxPackets) {
+            av_packet_free(&prebuf.front().pkt);
+            prebuf.pop_front();
+        }
         // голова буфера — строго видео-кейфрейм (иначе сегмент не декодируется)
         while (!prebuf.empty() && !(prebuf.front().si == video_idx && prebuf.front().key)) {
             av_packet_free(&prebuf.front().pkt);
@@ -532,6 +564,7 @@ bool SegmentRecorder::record_session_motion(const std::string& url, int segment_
     AVPacket* pkt = av_packet_alloc();
 
     while (running_ && !reload_requested_) {
+        irq.arm_seconds(kReadTimeoutSec);
         if (av_read_frame(in, pkt) < 0) {
             spdlog::warn("recorder (motion): stream read error");
             stream_ok = false;

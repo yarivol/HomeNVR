@@ -10,6 +10,7 @@
 #include <optional>
 #include <stdexcept>
 #include <tuple>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -30,6 +31,29 @@ void Exporter::start() {
         });
     } catch (const std::exception& e) {
         spdlog::error("export recovery failed: {}", e.what());
+    }
+    // файлы-сироты: бэкап упал посреди ffmpeg — частичный export_*.mp4
+    // остаётся на диске навсегда (cleanup удаляет только READY). Убираем.
+    try {
+        const auto ready = db_.tx([](pqxx::work& w) {
+            std::unordered_set<std::string> files;
+            const auto r = w.exec(
+                "SELECT file_path FROM exports WHERE status='READY' AND file_path IS NOT NULL");
+            for (const auto& row : r) files.insert(row["file_path"].as<std::string>());
+            return files;
+        });
+        std::error_code ec2;
+        if (fs::exists(exports_path_, ec2))
+            for (const auto& entry : fs::directory_iterator(exports_path_, ec2)) {
+                if (!entry.is_regular_file(ec2)) continue;
+                const auto name = entry.path().filename().string();
+                if (name.rfind("export_", 0) == 0 && name.ends_with(".mp4") && !ready.count(name)) {
+                    fs::remove(entry.path(), ec2);
+                    spdlog::info("export recovery: удалён файл-сирота {}", name);
+                }
+            }
+    } catch (const std::exception& e) {
+        spdlog::error("export orphan sweep failed: {}", e.what());
     }
     thread_ = std::thread([this] { run(); });
     spdlog::info("exporter started");
@@ -164,7 +188,23 @@ void Exporter::process(long long id, const std::string& start_iso, const std::st
         }
 
         int status = 0;
-        waitpid(pid, &status, 0);
+        // потолок 10 минут: зависший ffmpeg не должен навсегда блокировать
+        // очередь экспортов и stop(); при остановке backend'а — завершаем сразу
+        bool reaped = false;
+        for (int i = 0; i < 6000; ++i) {
+            if (waitpid(pid, &status, WNOHANG) > 0) { reaped = true; break; }
+            if (!running_) {
+                kill(pid, SIGTERM);
+                usleep(500'000);
+                break;
+            }
+            usleep(100'000);
+        }
+        if (!reaped) {
+            spdlog::error("export {}: ffmpeg завис (или остановка backend), убиваем", id);
+            kill(pid, SIGKILL);
+            waitpid(pid, &status, 0);
+        }
         fs::remove(list_file);
 
         // 6. Готово
@@ -174,6 +214,10 @@ void Exporter::process(long long id, const std::string& start_iso, const std::st
         } else {
             spdlog::error("export {}: ffmpeg failed (status {})", id, status);
             set_status("FAILED");
+            // частичный файл не должен копиться на диске:
+            // cleanup_expired удаляет только READY
+            std::error_code ec;
+            fs::remove(out_path, ec);
         }
     } catch (const std::exception& e) {
         spdlog::error("export {} failed: {}", id, e.what());

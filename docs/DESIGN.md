@@ -145,7 +145,7 @@ WebSocket (`/ws`): realtime события `camera.*`, `motion.*`, `recording.*`
 Ключевые файлы: `lib/api.ts` (fetch + редирект на 401), `lib/useAuth.ts` (guard + setup-check),
 `components/HlsPlayer.tsx` (hls.js, нативный HLS в Safari).
 
-- Локализация: `locales/ru.json` (задел под en; строки постепенно переносятся)
+- Локализация: русские строки инлайн в страницах (locales/ — удалён как мёртвый код)
 - Аутентификация: HttpOnly session cookie, срок 7 дней
 - Responsive, mobile-first, touch-friendly
 - Стиль: минимализм, крупные кнопки, без технических деталей для USER

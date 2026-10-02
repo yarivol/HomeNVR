@@ -44,6 +44,10 @@ services:
     logging: *default-logging
     restart: unless-stopped
     mem_limit: 350m
+    memswap_limit: 350m
+    # M6: запрет повышения привилегий в контейнере
+    security_opt:
+      - no-new-privileges:true
 
   backend:
     build: ./backend
@@ -82,9 +86,16 @@ services:
     logging: *default-logging
     restart: unless-stopped
     # лимиты памяти: VM с 2 ГБ — разбушевавшийся процесс не должен
-    # уронить всю виртуалку (OOM-kill контейнера + restart лучше фриза VM)
+    # уронить всю виртуалку (OOM-kill контейнера + restart лучше фриза VM).
+    # memswap = mem_limit: лимит жёсткий, без ухода в медленный swap
     mem_limit: 900m
     mem_reservation: 256m
+    memswap_limit: 900m
+    # H4: время на graceful stop — закрыть активный сегмент до SIGKILL
+    stop_grace_period: 30s
+    # M6: запрет повышения привилегий
+    security_opt:
+      - no-new-privileges:true
 
   postgres:
     image: postgres:16-alpine
@@ -105,6 +116,9 @@ services:
     logging: *default-logging
     restart: unless-stopped
     mem_limit: 400m
+    memswap_limit: 400m
+    security_opt:
+      - no-new-privileges:true
 
   # Recovery (ТЗ §55, Phase 7): перезапускает контейнеры, ставшие unhealthy
   # (например, при дедлоке/зависании backend — healthcheck падает, autoheal решает)

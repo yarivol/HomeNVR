@@ -2,11 +2,16 @@
 // Все endpoints — только ADMIN (ТЗ §7.2).
 #include "routes.hpp"
 
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <cmath>
 #include <fstream>
 #include <vector>
 #include <cstdlib>
+#include <optional>
+#include <string>
+#include <unordered_map>
 
 #include "../auth/password_hash.hpp"
 #include "../auth/session.hpp"
@@ -22,13 +27,79 @@ crow::response json_error(int code, const std::string& msg) {
     return crow::response(code, res);
 }
 
-// Разрешённые ключи настроек (whitelist — никаких произвольных ключей)
-const std::unordered_map<std::string, bool> kAllowedSettings = {
-    {"recording_mode", true}, {"segment_duration_sec", true}, {"pre_buffer_sec", true},
-    {"max_storage_usage", true}, {"min_free_space", true}, {"overwrite_enabled", true},
-    {"motion_enabled", true}, {"motion_sensitivity", true}, {"motion_min_event_sec", true},
-    {"motion_cooldown_sec", true}, {"motion_zones_detect", true}, {"motion_zones_ignore", true},
+// ---------- Валидация значений настроек (H3 аудита) ----------
+// Раньше значения не проверялись: segment_duration_sec=0 → сегмент на каждом
+// кейфрейме + DB-флуд; max_storage_usage<=0 → очистка стирала весь архив.
+enum class SettingKind { Number, Bool, Mode, Zones };
+
+struct SettingRule {
+    SettingKind kind;
+    double min = 0, max = 0;
 };
+
+const std::unordered_map<std::string, SettingRule> kSettingsRules = {
+    {"recording_mode",       {SettingKind::Mode}},
+    {"segment_duration_sec", {SettingKind::Number, 60, 3600}},
+    {"pre_buffer_sec",       {SettingKind::Number, 0, 60}},
+    {"max_storage_usage",    {SettingKind::Number, 0.5, 0.95}},
+    {"min_free_space",       {SettingKind::Number, 0.05, 0.5}},
+    {"overwrite_enabled",    {SettingKind::Bool}},
+    {"motion_enabled",       {SettingKind::Bool}},
+    {"motion_sensitivity",   {SettingKind::Number, 0.0, 1.0}},
+    {"motion_min_event_sec", {SettingKind::Number, 1, 300}},
+    {"motion_cooldown_sec",  {SettingKind::Number, 0, 600}},
+    {"motion_zones_detect",  {SettingKind::Zones}},
+    {"motion_zones_ignore",  {SettingKind::Zones}},
+};
+
+// пустая строка = значение корректно; иначе — текст ошибки
+std::string validate_setting(const std::string& key, const crow::json::rvalue& v) {
+    const auto it = kSettingsRules.find(key);
+    if (it == kSettingsRules.end()) return {};  // незнакомый ключ — отфильтруется whitelist'ом
+    const auto& rule = it->second;
+
+    // чтение с проверкой типа: .d()/.b()/.s() бросают при несоответствии
+    try {
+        switch (rule.kind) {
+            case SettingKind::Number: {
+                const double x = v.d();
+                if (!std::isfinite(x) || x < rule.min || x > rule.max)
+                    return key + ": ожидается число " + std::to_string(rule.min) +
+                           "..." + std::to_string(rule.max);
+                return {};
+            }
+            case SettingKind::Bool: {
+                (void)v.b();  // бросит, если не boolean
+                return {};
+            }
+            case SettingKind::Mode: {
+                const auto mode = v.s();
+                if (mode != "continuous" && mode != "motion")
+                    return key + ": ожидается \"continuous\" или \"motion\"";
+                return {};
+            }
+            case SettingKind::Zones: {
+                auto parsed = nlohmann::json::parse(v.dump(), nullptr, false);
+                if (parsed.is_discarded() || !parsed.is_array())
+                    return key + ": ожидается JSON-массив зон";
+                for (const auto& z : parsed) {
+                    if (!z.is_object() || !z.contains("x") || !z.contains("y") ||
+                        !z.contains("w") || !z.contains("h"))
+                        return key + ": зона должна содержать x, y, w, h";
+                    for (const char* f : {"x", "y", "w", "h"}) {
+                        const double val = z[f].get<double>();
+                        if (!std::isfinite(val) || val < 0 || val > 1)
+                            return key + ": координаты зон — доли кадра 0..1";
+                    }
+                }
+                return {};
+            }
+        }
+    } catch (const std::exception&) {
+        return key + ": неверный тип значения";
+    }
+    return {};
+}
 
 }  // namespace
 
@@ -62,11 +133,22 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             const auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Некорректный JSON");
 
+            // сначала валидируем ВСЕ значения (H3): один неверный параметр —
+            // вся транзакция отклоняется, полуприменённых настроек не бывает
+            std::string validation_error;
+            for (const auto& key : body.keys()) {
+                const std::string k = key;
+                if (!kSettingsRules.count(k)) continue;  // незнакомый ключ — молча пропускаем
+                validation_error = validate_setting(k, body[key]);
+                if (!validation_error.empty()) break;
+            }
+            if (!validation_error.empty()) return json_error(400, validation_error);
+
             try {
                 std::string changed;
                 db.tx([&](pqxx::work& w) {
                     for (const auto& key : body.keys()) {
-                        if (!kAllowedSettings.count(key)) continue;  // незнакомый ключ — молча пропускаем
+                        if (!kSettingsRules.count(key)) continue;  // whitelist по правилам
                         // сериализуем значение обратно в JSON для JSONB-колонки
                         std::string json_str = crow::json::wvalue(body[key]).dump();
                         w.exec_params(
@@ -130,8 +212,14 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             if (!body || !body.has("username") || !body.has("password"))
                 return json_error(400, "Укажите имя пользователя и пароль");
 
-            const std::string username = body["username"].s();
-            const std::string role = body.has("role") ? std::string(body["role"].s()) : "USER";
+            const std::string username = [&] {
+                try { return std::string(body["username"].s()); }
+                catch (const std::exception&) { return std::string(); }
+            }();
+            const std::string role = [&] {
+                try { return body.has("role") ? std::string(body["role"].s()) : std::string("USER"); }
+                catch (const std::exception&) { return std::string(); }
+            }();
             if (username.empty() || username.size() > 64)
                 return json_error(400, "Некорректное имя пользователя");
             if (role != "USER" && role != "ADMIN")
@@ -142,6 +230,8 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
                 hash = auth::hash_password(body["password"].s());
             } catch (const std::invalid_argument& e) {
                 return json_error(400, e.what());
+            } catch (const std::exception&) {
+                return json_error(400, "Неверный тип значения (password)");
             }
 
             try {
@@ -170,42 +260,52 @@ void register_admin_routes(crow::SimpleApp& app, db::Database& db, MotionDetecto
             const auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Некорректный JSON");
 
+            // H5 аудита: доступ к JSON-полям только с проверкой типа —
+            // исключение из .b()/.s() не должно покидать handler
+            std::optional<bool> v_enabled;
+            std::optional<std::string> v_password, v_role;
+            try {
+                if (body.has("enabled")) v_enabled = body["enabled"].b();
+                if (body.has("password")) v_password = body["password"].s();
+                if (body.has("role")) v_role = body["role"].s();
+            } catch (const std::exception&) {
+                return json_error(400, "Неверный тип значения (enabled/password/role)");
+            }
+
             // админ не может отключить сам себя
-            if (body.has("enabled") && !static_cast<bool>(body["enabled"].b()) && admin->id == id)
+            if (v_enabled.has_value() && !*v_enabled && admin->id == id)
                 return json_error(400, "Нельзя отключить самого себя");
 
             // argon2-хеширование медленное (by design) — считаем ДО транзакции,
             // чтобы не держать блокировку БД сотни миллисекунд
             std::string new_hash;
-            if (body.has("password")) {
+            if (v_password.has_value()) {
                 try {
-                    new_hash = auth::hash_password(body["password"].s());
+                    new_hash = auth::hash_password(*v_password);
                 } catch (const std::invalid_argument& e) {
                     return json_error(400, e.what());
                 }
             }
 
+            if (v_role.has_value() && *v_role != "USER" && *v_role != "ADMIN")
+                return json_error(400, "Некорректная роль");
+
             try {
                 db.tx([&](pqxx::work& w) {
-                    if (body.has("password")) {
+                    if (v_password.has_value()) {
                         w.exec_params("UPDATE users SET password_hash=$1, updated_at=now() WHERE id=$2",
                                       new_hash, id);
                         // сбрасываем сессии пользователя после смены пароля
                         w.exec_params("DELETE FROM sessions WHERE user_id=$1", id);
                     }
-                    if (body.has("enabled"))
+                    if (v_enabled.has_value())
                         w.exec_params("UPDATE users SET enabled=$1, updated_at=now() WHERE id=$2",
-                                      static_cast<bool>(body["enabled"].b()), id);
-                    if (body.has("role")) {
-                        const std::string role = body["role"].s();
-                        if (role != "USER" && role != "ADMIN") throw std::invalid_argument("role");
+                                      *v_enabled, id);
+                    if (v_role.has_value())
                         w.exec_params(
                             "UPDATE users SET role_id=(SELECT id FROM roles WHERE name=$1), "
-                            "updated_at=now() WHERE id=$2", role, id);
-                    }
+                            "updated_at=now() WHERE id=$2", *v_role, id);
                 });
-            } catch (const std::invalid_argument& e) {
-                return json_error(400, e.what());
             } catch (const std::exception& e) {
                 spdlog::error("PATCH /api/admin/users failed: {}", e.what());
                 return json_error(500, "Внутренняя ошибка сервера");
