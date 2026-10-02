@@ -228,7 +228,7 @@ int main() {
     // M1: 4 воркера — долгие запросы (архивная сессия до 60 c) не должны
     // на 2-ядерной VM (hardware_concurrency = 2) исчерпать пул и «уронить»
     // /health до ложного unhealthy + рестарта от autoheal
-    app.port(cfg.port).multithreaded(4).run();
+    app.port(cfg.port).multithreaded().concurrency(4).run();
 
     exporter.stop();
     live.stop();
