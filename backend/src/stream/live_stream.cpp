@@ -63,8 +63,9 @@ void LiveStream::run() {
         }
 
         // ffmpeg: RTSP -> HLS (stream copy, минимальная нагрузка).
-        // -timeout/-rw_timeout: замерший RTSP-обрыв не должен оставлять
-        // «живой» процесс с мёртвым плейлистом (супервизор ждёт только exit)
+        // -timeout: замерший RTSP-обрыв не должен оставлять «живой» процесс
+        // с мёртвым плейлистом (супервизор ждёт только exit).
+        // rw_timeout не ставим: как опция ввода ffmpeg CLI его не принимает
         const std::string playlist = live_path_ + "/index.m3u8";
         const std::string rtsp_timeout = "15000000";  // 15 c, мкс
         child_ = fork();
@@ -73,7 +74,6 @@ void LiveStream::run() {
                    "-loglevel", "warning",
                    "-rtsp_transport", "tcp",
                    "-timeout", rtsp_timeout.c_str(),
-                   "-rw_timeout", rtsp_timeout.c_str(),
                    "-i", url.c_str(),
                    "-c", "copy",
                    "-f", "hls",
